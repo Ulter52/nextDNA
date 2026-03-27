@@ -1,7 +1,29 @@
 {
   "extends": "@react-native/typescript-config",
   "compilerOptions": {
-    "types": ["jest"]
+    "types": ["jest"],
+    "baseUrl": ".",
+    "paths": {
+      "@core/*": ["src/core/*"],
+      "@components/*": ["src/core/components/*"],
+      "@modules/*": ["src/modules/*"],
+      "@services/*": ["src/services/*"],
+      "@utils/*": ["src/core/utils/*"],
+      "@theme": ["src/core/theme"],
+      "@theme/*": ["src/core/theme/*"],
+      "@assets/*": ["src/assets/*"],
+      "@navigation/*": ["src/navigation/*"],
+      "@selling": ["modules/selling"],
+      "@sellingComponents": ["modules/selling/components"],
+      "@sellingServices": ["modules/selling/services"],
+      "@sellingScreens": ["modules/selling/screens"],
+      "@authServices": ["modules/auth/services"],
+      "@auth": ["modules/auth"],
+      "@dashboard": ["modules/dashboard"],
+      "@stock": ["modules/stock"],
+      "@user": ["modules/user"],
+      "@accounting": ["modules/accounting"]
+    }
   },
   "include": ["**/*.ts", "**/*.tsx"],
   "exclude": ["**/node_modules", "**/Pods"]

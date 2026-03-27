@@ -1,0 +1,173 @@
+import { StyleSheet } from 'react-native';
+import { colors, commonStyles, spacing, typography } from '@theme';
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    paddingHorizontal: 24,
+    paddingTop: 24,
+  },
+  header: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginBottom: 24,
+    gap: 12,
+  },
+  searchWrapper: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f9fafb',
+    borderRadius: 16,
+    paddingHorizontal: 12,
+  },
+  searchIcon: {
+    marginRight: 8,
+  },
+  searchInput: {
+    flex: 1,
+    paddingVertical: 12,
+    fontSize: 14,
+    color: '#111827',
+  },
+  headerActions: {
+    flexDirection: 'row',
+    gap: 8,
+  },
+  iconButton: {
+    padding: 12,
+    backgroundColor: '#f9fafb',
+    borderRadius: 16,
+  },
+  addButton: {
+    padding: 12,
+    backgroundColor: '#2563eb',
+    borderRadius: 16,
+    shadowColor: '#2563eb',
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  errorContainer: {
+    backgroundColor: '#fef2f2',
+    padding: 24,
+    borderRadius: 24,
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#fee2e2',
+    marginTop: 20,
+  },
+  errorIconContainer: {
+    width: 48,
+    height: 48,
+    backgroundColor: '#fee2e2',
+    borderRadius: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+    marginBottom: 12,
+  },
+  errorText: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#991b1b',
+    textAlign: 'center',
+    marginBottom: 12,
+  },
+  retryText: {
+    fontSize: 12,
+    fontWeight: 'bold',
+    color: '#dc2626',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    textDecorationLine: 'underline',
+  },
+  loadingContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  emptyContainer: {
+    flex: 1,
+    justifyContent: 'center',
+    alignItems: 'center',
+    gap: 16,
+    paddingBottom: 100,
+  },
+  emptyIconContainer: {
+    width: 80,
+    height: 80,
+    backgroundColor: '#f9fafb',
+    borderRadius: 40,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  emptyTitle: {
+    fontSize: 16,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  emptySubtitle: {
+    fontSize: 12,
+    color: '#9ca3af',
+    textAlign: 'center',
+  },
+  listContent: {
+    paddingBottom: 120,
+    gap: 12,
+  },
+  customerCard: {
+    backgroundColor: '#ffffff',
+    borderRadius: 24,
+    padding: 16,
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    borderWidth: 1,
+    borderColor: '#f3f4f6',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+    elevation: 2,
+  },
+  customerLeft: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 16,
+    flex: 1,
+  },
+  avatar: {
+    width: 48,
+    height: 48,
+    backgroundColor: '#eff6ff',
+    borderRadius: 16,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  avatarText: {
+    color: '#2563eb',
+    fontSize: 18,
+    fontWeight: '900',
+  },
+  customerInfo: {
+    flex: 1,
+  },
+  customerName: {
+    fontSize: 14,
+    fontWeight: 'bold',
+    color: '#111827',
+  },
+  customerDetails: {
+    fontSize: 10,
+    color: '#9ca3af',
+    textTransform: 'uppercase',
+    letterSpacing: 0.5,
+    fontWeight: '500',
+  },
+  moreButton: {
+    padding: 8,
+  },
+});
+
+export default styles;
