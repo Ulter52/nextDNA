@@ -50,7 +50,7 @@ export function MainTabNavigator({ user, onLogout }: MainTabNavigatorProps) {
         tabBarIcon: ({ color, size, focused }) => {
           const iconSize = 22;
           const strokeWidth = focused ? 2.5 : 2;
-          
+
           switch (route.name) {
             case 'DashboardTab':
               return <Home size={iconSize} color={color} strokeWidth={strokeWidth} />;
@@ -68,27 +68,27 @@ export function MainTabNavigator({ user, onLogout }: MainTabNavigatorProps) {
         },
       })}
     >
-      <Tab.Screen 
-        name="DashboardTab" 
-        component={DashboardScreen} 
-        options={{ title: 'Home' }} 
+      <Tab.Screen
+        name="DashboardTab"
+        component={DashboardScreen}
+        options={{ title: 'Home' }}
       />
-      <Tab.Screen 
-        name="SellingTab" 
-        component={SellingNavigator} 
-        options={{ title: 'Selling' }} 
+      <Tab.Screen
+        name="SellingTab"
+        component={SellingNavigator}
+        options={{ title: 'Selling' }}
       />
-      <Tab.Screen 
-        name="StockTab" 
-        component={StockNavigator} 
-        options={{ title: 'Stock' }} 
+      <Tab.Screen
+        name="StockTab"
+        component={StockNavigator}
+        options={{ title: 'Stock' }}
       />
-      <Tab.Screen 
-        name="AccountingTab" 
-        component={AccountingNavigator} 
-        options={{ title: 'Accounting' }} 
+      <Tab.Screen
+        name="AccountingTab"
+        component={AccountingNavigator}
+        options={{ title: 'Accounting' }}
       />
-      <Tab.Screen 
+      <Tab.Screen
         name="More"
       >
         {(props) => <MoreNavigator {...props} onLogout={onLogout} />}

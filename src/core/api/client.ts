@@ -1,6 +1,7 @@
 import axios from 'axios';
+import Config from 'react-native-config';
 
-export const BASE_URL = 'https://erpnext-wxk-vgk.m.frappe.cloud';
+export const BASE_URL = `${Config.ERPNEXT_URL}`;
 
 let logoutHandler: (() => void) | null = null;
 
@@ -21,8 +22,8 @@ apiClient.interceptors.response.use(
   response => response,
   error => {
     const status = error.response?.status;
-    
-    // 401 (Unauthorized) or 403 (Session Expired/Forbidden) 
+
+    // 401 (Unauthorized) or 403 (Session Expired/Forbidden)
     // often indicate session issues in ERPNext
     if ((status === 401 || status === 403) && logoutHandler) {
       console.warn('Session expired or unauthorized. Logging out...');

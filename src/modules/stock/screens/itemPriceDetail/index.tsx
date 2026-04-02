@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useMemo } from 'react';
 import { View, Text, ActivityIndicator, RefreshControl, ScrollView, TouchableOpacity } from 'react-native';
 import { 
   Calendar, 
@@ -8,43 +8,32 @@ import {
   Info,
   Edit
 } from 'lucide-react-native';
-import { ModuleLayout } from '../../../../core/components/ModuleLayout';
-import { styles as detailStyles } from '../itemDetail/styles';
-import { colors, spacing, borderRadius } from '../../../../core/theme';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { fetchResource } from '../../../../core/api/frappeApiHelpers';
+
+import { ModuleLayout } from '@core/components/ModuleLayout';
+import { colors, spacing, borderRadius } from '@core/theme';
+import { styles as detailStyles } from '../itemDetail/styles';
+
+import { useItemPriceDetail } from '../../hooks/itemPriceQueries';
+
+const InfoRow = React.memo(({ label, value, icon: Icon }: { label: string, value: any, icon?: any }) => (
+  <View style={detailStyles.infoRow}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
+      {Icon && <Icon size={14} color={colors.text_tertiary} />}
+      <Text style={detailStyles.infoLabel}>{label}</Text>
+    </View>
+    <Text style={detailStyles.infoValue} numberOfLines={2}>{value || 'N/A'}</Text>
+  </View>
+));
 
 export function ItemPriceDetail() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { priceId } = route.params;
   
-  const [price, setPrice] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
+  const { data: price, isLoading, refetch } = useItemPriceDetail(priceId);
 
-  const fetchData = useCallback(async () => {
-    try {
-      const res = await fetchResource(`Item Price/${priceId}`);
-      setPrice(res?.data || null);
-    } catch (err) {
-      console.error("Failed to fetch item price details", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [priceId]);
-
-  useEffect(() => {
-    fetchData();
-  }, [fetchData]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchData();
-  };
-
-  if (loading && !price) {
+  if (isLoading && !price) {
     return (
       <ModuleLayout title="Item Price Detail" showBack>
         <View style={detailStyles.loadingContainer}>
@@ -54,15 +43,15 @@ export function ItemPriceDetail() {
     );
   }
 
-  const InfoRow = ({ label, value, icon: Icon }: { label: string, value: any, icon?: any }) => (
-    <View style={detailStyles.infoRow}>
-      <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, flex: 1 }}>
-        {Icon && <Icon size={14} color={colors.text_tertiary} />}
-        <Text style={detailStyles.infoLabel}>{label}</Text>
-      </View>
-      <Text style={detailStyles.infoValue} numberOfLines={2}>{value || 'N/A'}</Text>
-    </View>
-  );
+  if (!price) {
+    return (
+      <ModuleLayout title="Not Found" showBack>
+        <View style={detailStyles.loadingContainer}>
+          <Text style={{ color: colors.text_secondary }}>Price detail not found</Text>
+        </View>
+      </ModuleLayout>
+    );
+  }
 
   return (
     <ModuleLayout title="Item Price Detail" showBack>
@@ -70,7 +59,7 @@ export function ItemPriceDetail() {
         style={{ flex: 1 }}
         contentContainerStyle={{ padding: spacing.lg }}
         refreshControl={
-          <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+          <RefreshControl refreshing={isLoading} onRefresh={refetch} tintColor={colors.primary} />
         }
       >
         <View style={[detailStyles.sectionCard, detailStyles.blueCard, { width: '100%' }]}>

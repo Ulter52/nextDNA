@@ -1,108 +1,78 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, ActivityIndicator, RefreshControl, StyleSheet } from 'react-native';
-import { Barcode, Calendar, Clock, Tag, Package, RefreshCw, Activity, ArrowRightLeft, MapPin } from 'lucide-react-native';
-import { ModuleLayout } from '../../../../core/components/ModuleLayout';
-import { colors, spacing, borderRadius, typography, shadow, moderateScale } from '../../../../core/theme';
-import { Selector } from '../../../../core/components/Selector';
-import { metadataService } from '../../../../core/services/metadataService';
-import { runReport } from '../../../../core/api/frappeApiHelpers';
-import { getDateRanges } from '../../../../core/utils/dateHelpers';
+import { Barcode, Calendar, Clock, Tag, Package, ArrowRightLeft, MapPin } from 'lucide-react-native';
+
+import { ModuleLayout } from '@core/components/ModuleLayout';
+import { Selector } from '@core/components/Selector';
+import { useDebounce } from '@core/utils/debounce';
+import { colors, spacing, borderRadius, typography, shadow, moderateScale } from '@core/theme';
+
+import { 
+  useItemsForLedger, 
+  useSerialNosForLedger, 
+  useSerialNoLedger 
+} from '../../hooks/serialNoQueries';
+
+const LedgerItem = React.memo(({ item, getStatusColor, getVoucherTypeStyles }: any) => {
+  const vStyles = getVoucherTypeStyles(item.voucher_type);
+  const statusColor = getStatusColor(item.status);
+  
+  return (
+    <View style={styles.ledgerCard}>
+      <View style={styles.ledgerHeader}>
+        <View style={[styles.typeBadge, { backgroundColor: vStyles.bg }]}>
+          <ArrowRightLeft size={12} color={vStyles.text} style={{ marginRight: 4 }} />
+          <Text style={[styles.typeBadgeText, { color: vStyles.text }]}>{item.voucher_type}</Text>
+        </View>
+        <View style={[styles.statusBadge, { backgroundColor: statusColor + '15' }]}>
+          <Text style={[styles.statusBadgeText, { color: statusColor }]}>{item.status || 'No Status'}</Text>
+        </View>
+      </View>
+      
+      <View style={styles.ledgerBody}>
+        <View style={styles.mainInfo}>
+          <Tag size={16} color={colors.text_tertiary} />
+          <Text style={styles.voucherNo}>{item.voucher_no}</Text>
+        </View>
+        
+        <View style={styles.detailRow}>
+          <MapPin size={14} color={colors.text_tertiary} />
+          <Text style={styles.detailText}>{item.warehouse || 'No Warehouse'}</Text>
+        </View>
+      </View>
+      
+      <View style={styles.ledgerFooter}>
+        <View style={styles.footerItem}>
+          <Calendar size={14} color={colors.text_tertiary} />
+          <Text style={styles.footerText}>{item.posting_date}</Text>
+        </View>
+        {item.posting_time && (
+          <View style={styles.footerItem}>
+            <Clock size={14} color={colors.text_tertiary} />
+            <Text style={styles.footerText}>{item.posting_time}</Text>
+          </View>
+        )}
+      </View>
+    </View>
+  );
+});
 
 export function SerialNoLedger() {
-  const [items, setItems] = useState<any[]>([]);
-  const [serialNos, setSerialNos] = useState<any[]>([]);
   const [selectedItem, setSelectedItem] = useState('');
   const [selectedSerialNo, setSelectedSerialNo] = useState('');
   
-  const [ledgerData, setLedgerData] = useState<any[]>([]);
-  const [loading, setLoading] = useState(false);
-  const [refreshing, setRefreshing] = useState(false);
-  const [searchingItems, setSearchingItems] = useState(false);
-  const [searchingSerialNos, setSearchingSerialNos] = useState(false);
+  const [itemSearch, setItemSearch] = useState('');
+  const [serialSearch, setSerialSearch] = useState('');
+  
+  const debouncedItemSearch = useDebounce(itemSearch);
+  const debouncedSerialSearch = useDebounce(serialSearch);
 
-  const fetchItems = useCallback(async (search?: string) => {
-    setSearchingItems(true);
-    try {
-      const res = await metadataService.getItems(search);
-      setItems(res?.data || []);
-    } catch (err) {
-      console.error("Failed to fetch items", err);
-    } finally {
-      setSearchingItems(false);
-    }
-  }, []);
+  // Queries
+  const { data: items = [], isLoading: loadingItems } = useItemsForLedger(debouncedItemSearch);
+  const { data: serialNos = [], isLoading: loadingSerialNos } = useSerialNosForLedger(selectedItem, debouncedSerialSearch);
+  const { data: ledgerData = [], isLoading: loadingLedger, isRefetching, refetch } = useSerialNoLedger(selectedItem, selectedSerialNo);
 
-  const fetchSerialNos = useCallback(async (itemCode: string, search?: string) => {
-    if (!itemCode) return;
-    setSearchingSerialNos(true);
-    try {
-      const res = await metadataService.getSerialNos(itemCode, search);
-      setSerialNos(res?.data || []);
-    } catch (err) {
-      console.error("Failed to fetch serial nos", err);
-    } finally {
-      setSearchingSerialNos(false);
-    }
-  }, []);
-
-  // Memoized search handlers to prevent Selector re-fetch loops
-  const handleItemSearch = useCallback((query: string) => {
-    fetchItems(query);
-  }, [fetchItems]);
-
-  const handleSerialSearch = useCallback((query: string) => {
-    if (selectedItem) {
-      fetchSerialNos(selectedItem, query);
-    }
-  }, [selectedItem, fetchSerialNos]);
-
-  useEffect(() => {
-    fetchItems();
-  }, [fetchItems]);
-
-  useEffect(() => {
-    if (selectedItem) {
-      fetchSerialNos(selectedItem);
-      setSelectedSerialNo('');
-      setLedgerData([]);
-    }
-  }, [selectedItem, fetchSerialNos]);
-
-  const fetchLedger = useCallback(async () => {
-    if (!selectedItem || !selectedSerialNo) return;
-    
-    setLoading(true);
-    try {
-      const { today } = getDateRanges();
-      const currentTime = new Date().toLocaleTimeString('en-GB', { hour12: false });
-
-      const res = await runReport('Serial No Ledger', {
-        item_code: selectedItem,
-        serial_no: selectedSerialNo,
-        posting_date: today,
-        posting_time: currentTime
-      });
-      setLedgerData(res?.result || []);
-    } catch (err) {
-      console.error("Failed to fetch ledger", err);
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [selectedItem, selectedSerialNo]);
-
-  useEffect(() => {
-    if (selectedItem && selectedSerialNo) {
-      fetchLedger();
-    }
-  }, [selectedItem, selectedSerialNo, fetchLedger]);
-
-  const onRefresh = () => {
-    setRefreshing(true);
-    fetchLedger();
-  };
-
-  const getStatusColor = (status: string) => {
+  const getStatusColor = useCallback((status: string) => {
     switch (status) {
       case 'Active': return colors.success;
       case 'Inactive': return colors.text_tertiary;
@@ -110,9 +80,9 @@ export function SerialNoLedger() {
       case 'Expired': return colors.error;
       default: return colors.text_secondary;
     }
-  };
+  }, []);
 
-  const getVoucherTypeStyles = (type: string) => {
+  const getVoucherTypeStyles = useCallback((type: string) => {
     switch (type) {
       case 'Purchase Receipt':
         return { bg: colors.green_100, text: colors.success };
@@ -129,50 +99,32 @@ export function SerialNoLedger() {
       default:
         return { bg: colors.neutral_100, text: colors.text_secondary };
     }
-  };
+  }, []);
 
-  const renderLedgerItem = ({ item }: { item: any }) => {
-    const vStyles = getVoucherTypeStyles(item.voucher_type);
-    
-    return (
-      <View style={styles.ledgerCard}>
-        <View style={styles.ledgerHeader}>
-          <View style={[styles.typeBadge, { backgroundColor: vStyles.bg }]}>
-            <ArrowRightLeft size={12} color={vStyles.text} style={{ marginRight: 4 }} />
-            <Text style={[styles.typeBadgeText, { color: vStyles.text }]}>{item.voucher_type}</Text>
-          </View>
-          <View style={[styles.statusBadge, { backgroundColor: getStatusColor(item.status) + '15' }]}>
-            <Text style={[styles.statusBadgeText, { color: getStatusColor(item.status) }]}>{item.status || 'No Status'}</Text>
-          </View>
-        </View>
-        
-        <View style={styles.ledgerBody}>
-          <View style={styles.mainInfo}>
-            <Tag size={16} color={colors.text_tertiary} />
-            <Text style={styles.voucherNo}>{item.voucher_no}</Text>
-          </View>
-          
-          <View style={styles.detailRow}>
-            <MapPin size={14} color={colors.text_tertiary} />
-            <Text style={styles.detailText}>{item.warehouse || 'No Warehouse'}</Text>
-          </View>
-        </View>
-        
-        <View style={styles.ledgerFooter}>
-          <View style={styles.footerItem}>
-            <Calendar size={14} color={colors.text_tertiary} />
-            <Text style={styles.footerText}>{item.posting_date}</Text>
-          </View>
-          {item.posting_time && (
-            <View style={styles.footerItem}>
-              <Clock size={14} color={colors.text_tertiary} />
-              <Text style={styles.footerText}>{item.posting_time}</Text>
-            </View>
-          )}
-        </View>
-      </View>
-    );
-  };
+  const handleItemChange = useCallback((val: string) => {
+    setSelectedItem(val);
+    setSelectedSerialNo('');
+    setSerialSearch('');
+  }, []);
+
+  const renderItem = useCallback(({ item }: { item: any }) => (
+    <LedgerItem 
+      item={item} 
+      getStatusColor={getStatusColor} 
+      getVoucherTypeStyles={getVoucherTypeStyles} 
+    />
+  ), [getStatusColor, getVoucherTypeStyles]);
+
+  const listEmptyComponent = useMemo(() => (
+    <View style={styles.emptyContainer}>
+      <Barcode size={48} color={colors.border} />
+      <Text style={styles.emptyText}>
+        {!selectedItem || !selectedSerialNo 
+          ? "Select an Item and Serial No to view history" 
+          : "No transactions found for this serial number"}
+      </Text>
+    </View>
+  ), [selectedItem, selectedSerialNo]);
 
   return (
     <ModuleLayout title="Serial No Ledger" showBack>
@@ -182,12 +134,12 @@ export function SerialNoLedger() {
             label="Item Code"
             options={items}
             value={selectedItem}
-            onChange={setSelectedItem}
-            onSearch={handleItemSearch}
-            loading={searchingItems}
+            onChange={handleItemChange}
+            onSearch={setItemSearch}
+            loading={loadingItems}
             icon={Package}
             placeholder="Select Item"
-            displayField="name"
+            displayField="Item Code"
           />
           
           <Selector
@@ -195,15 +147,15 @@ export function SerialNoLedger() {
             options={serialNos}
             value={selectedSerialNo}
             onChange={setSelectedSerialNo}
-            onSearch={handleSerialSearch}
-            loading={searchingSerialNos}
+            onSearch={setSerialSearch}
+            loading={loadingSerialNos}
             icon={Barcode}
             placeholder="Select Serial No"
             disabled={!selectedItem}
           />
         </View>
 
-        {loading && !refreshing ? (
+        {loadingLedger && !isRefetching ? (
           <View style={styles.loadingContainer}>
             <ActivityIndicator size="large" color={colors.primary} />
             <Text style={styles.loadingText}>Fetching ledger data...</Text>
@@ -211,22 +163,17 @@ export function SerialNoLedger() {
         ) : (
           <FlatList
             data={ledgerData}
-            renderItem={renderLedgerItem}
+            renderItem={renderItem}
             keyExtractor={(item, index) => `${item.voucher_no}-${index}`}
             contentContainerStyle={styles.listContent}
             refreshControl={
-              <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+              <RefreshControl 
+                refreshing={isRefetching} 
+                onRefresh={refetch} 
+                tintColor={colors.primary} 
+              />
             }
-            ListEmptyComponent={
-              <View style={styles.emptyContainer}>
-                <Barcode size={48} color={colors.border} />
-                <Text style={styles.emptyText}>
-                  {!selectedItem || !selectedSerialNo 
-                    ? "Select an Item and Serial No to view history" 
-                    : "No transactions found for this serial number"}
-                </Text>
-              </View>
-            }
+            ListEmptyComponent={listEmptyComponent}
           />
         )}
       </View>

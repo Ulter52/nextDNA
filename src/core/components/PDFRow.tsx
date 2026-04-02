@@ -1,9 +1,7 @@
-import React, { useState } from 'react';
-import { View, Text, TouchableOpacity, Linking, Alert, ActivityIndicator, StyleSheet } from 'react-native';
-import { Printer, Share2 } from 'lucide-react-native';
+import React from 'react';
+import { View, Text, TouchableOpacity, Alert, StyleSheet } from 'react-native';
+import { Printer, Lock } from 'lucide-react-native';
 import { colors, spacing } from '../theme';
-import { BASE_URL } from '../api/client';
-import { callMethod } from '../api/frappeApiHelpers';
 
 interface PDFRowProps {
   doctype: string;
@@ -12,62 +10,34 @@ interface PDFRowProps {
   icon?: any;
 }
 
-export function PDFRow({ doctype, name, label = "Print Format / PDF", icon: Icon = Printer }: PDFRowProps) {
-  const [loading, setLoading] = useState(false);
-
-  const handleOpenPDF = async () => {
-    if (!name) return;
-    setLoading(true);
-    try {
-      // 1. Fetch sharing key for the document to bypass session requirement in external browser
-      const sharingKey = await callMethod('frappe.get_document_share_key', {
-        doctype: doctype,
-        name: name
-      });
-
-      // 2. Construct the PDF download URL with the sharing key
-      let pdfUrl = `${BASE_URL}/api/method/frappe.utils.print_format.download_pdf?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}&format=Standard&no_letterhead=0`;
-      
-      if (sharingKey) {
-        pdfUrl += `&key=${sharingKey}`;
-      }
-
-      // 3. Open in external browser
-      await Linking.openURL(pdfUrl);
-      
-    } catch (error) {
-      console.error("PDF Sharing Error:", error);
-      // Fallback: attempt to open without key
-      try {
-        const fallbackUrl = `${BASE_URL}/api/method/frappe.utils.print_format.download_pdf?doctype=${encodeURIComponent(doctype)}&name=${encodeURIComponent(name)}&format=Standard`;
-        await Linking.openURL(fallbackUrl);
-      } catch (e) {
-        Alert.alert("Error", "Failed to generate a secure PDF link.");
-      }
-    } finally {
-      setLoading(false);
-    }
+/**
+ * PDFRow - Temporary placeholder for PDF functionality.
+ * PDF generation is scheduled for Version 2.0.
+ */
+export function PDFRow({ label = "Print Format / PDF", icon: Icon = Printer }: PDFRowProps) {
+  
+  const handleOpenPDF = () => {
+    Alert.alert(
+      "Coming Soon (V2.0)",
+      "PDF Download and Export functionality is currently being optimized and will be available in Version 2.0. Stay tuned!",
+      [{ text: "OK", style: "default" }]
+    );
   };
 
   return (
     <TouchableOpacity 
       style={styles.container} 
       onPress={handleOpenPDF}
-      disabled={loading}
       activeOpacity={0.7}
     >
       <View style={styles.content}>
         <View style={styles.labelContainer}>
-          <Icon size={12} color={colors.primary} />
+          <Icon size={12} color={colors.text_tertiary} />
           <Text style={styles.label}>{label}</Text>
         </View>
         <View style={styles.valueContainer}>
-          <Text style={styles.value}>Generate & View PDF</Text>
-          {loading ? (
-            <ActivityIndicator size="small" color={colors.primary} style={{ marginLeft: 8 }} />
-          ) : (
-            <Share2 size={16} color={colors.primary} style={{ marginLeft: 8 }} />
-          )}
+          <Text style={styles.value}>Export PDF (V2.0)</Text>
+          <Lock size={14} color={colors.text_tertiary} style={{ marginLeft: 8 }} />
         </View>
       </View>
     </TouchableOpacity>
@@ -107,7 +77,8 @@ const styles = StyleSheet.create({
   },
   value: {
     fontSize: 14,
-    color: colors.primary,
-    fontWeight: '700',
+    color: colors.text_tertiary,
+    fontWeight: '600',
+    fontStyle: 'italic'
   }
 });

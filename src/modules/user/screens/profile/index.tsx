@@ -18,6 +18,7 @@ import {
 import { userService } from '../../services/userService';
 import { authService } from '@auth/services/authService';
 import { getInitials } from '@utils/formatters';
+import { ModuleLayout } from '@components/ModuleLayout';
 import styles from './styles';
 
 interface ProfileScreenProps {
@@ -124,6 +125,7 @@ export function ProfileScreen({ onLogout }: ProfileScreenProps) {
   }
 
   return (
+    <ModuleLayout title="Profile" showBack>
     <ScrollView contentContainerStyle={styles.container} showsVerticalScrollIndicator={false}>
       {/* Profile Header */}
       <View style={styles.header}>
@@ -363,6 +365,7 @@ export function ProfileScreen({ onLogout }: ProfileScreenProps) {
         <Text style={styles.logoutButtonText}>Sign Out of Account</Text>
       </TouchableOpacity>
     </ScrollView>
+    </ModuleLayout>
   );
 }
 

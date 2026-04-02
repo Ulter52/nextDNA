@@ -33,7 +33,7 @@ export const stockApi = {
   },
 
   createItem: (data: any) => createResource('Item', data),
-  
+
   updateItem: (itemCode: string, data: any) => updateResource('Item', itemCode, data),
 
   getStockEntries: (limit = 10) =>

@@ -63,7 +63,7 @@ export function Header({ title, onBack, hideRightIcons = false, extraAction }: H
             <ArrowLeft size={20} color={colors.text_secondary} />
           </TouchableOpacity>
         )}
-        <Text style={styles.title} numberOfLines={1} ellipsizeMode="tail">{title}</Text>
+        <Text style={styles.title} numberOfLines={1} ellipsizeMode="head">{title}</Text>
       </View>
 
       {!hideRightIcons && (
@@ -99,10 +99,10 @@ export function Header({ title, onBack, hideRightIcons = false, extraAction }: H
             onPress={() => setCompanyModalVisible(true)}
           >
             <View style={styles.companyIcon}>
-              <Building2 size={14} color={colors.primary} />
+              <Building2 size={14} color={colors.white} />
             </View>
-            <Text style={styles.companyAbbr}>{selectedCompany?.abbr || '??'}</Text>
-            <ChevronDown size={14} color={colors.text_tertiary} />
+            <Text style={styles.companyAbbr} >{selectedCompany?.abbr || '??'}</Text>
+            <ChevronDown size={14} color={colors.white} strokeWidth={3} />
           </TouchableOpacity>
         </View>
       )}
@@ -136,7 +136,7 @@ const styles = StyleSheet.create({
     flexDirection: 'row',
     justifyContent: 'space-between',
     alignItems: 'center',
-    paddingHorizontal: spacing.lg,
+    paddingHorizontal: spacing.md,
     paddingVertical: spacing.md,
     borderBottomWidth: 1,
     borderBottomColor: colors.border_light,
@@ -147,16 +147,19 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: spacing.md,
     flex: 1,
+    overflow: 'hidden',
   },
   title: {
     fontSize: typography.sizes.lg,
     fontWeight: typography.weights.bold,
     color: colors.text_primary,
+    flexShrink: 1,
   },
   rightSection: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: spacing.sm,
+    flexShrink: 0,
   },
   iconButton: {
     padding: spacing.xs,
@@ -176,9 +179,9 @@ const styles = StyleSheet.create({
   companySelector: {
     flexDirection: 'row',
     alignItems: 'center',
-    backgroundColor: colors.background,
-    paddingHorizontal: spacing.sm,
-    paddingVertical: 6,
+    backgroundColor: colors.primary,
+    paddingHorizontal: spacing.sm/2,
+    paddingVertical: spacing.sm/2,
     borderRadius: borderRadius.lg,
     gap: 6,
     borderWidth: 1,
@@ -189,14 +192,14 @@ const styles = StyleSheet.create({
     width: 24,
     height: 24,
     borderRadius: 6,
-    backgroundColor: colors.blue_50,
+    backgroundColor: colors.primary,
     alignItems: 'center',
     justifyContent: 'center',
   },
   companyAbbr: {
-    fontSize: typography.sizes.xs,
+    fontSize: typography.sizes.sm,
     fontWeight: typography.weights.bold,
-    color: colors.text_primary,
+    color: colors.white,
     textTransform: 'uppercase',
   },
 });

@@ -4,6 +4,7 @@ import { frappeApi, fetchResource } from '../api/frappeApiHelpers';
 const SELECTED_COMPANY_KEY = 'selected_erp_company_v2';
 const COMPANIES_CACHE_KEY = 'erp_companies_cache';
 const FISCAL_YEAR_CACHE_KEY = 'erp_fiscal_year_v2';
+const ALL_FISCAL_YEARS_CACHE_KEY = 'erp_all_fiscal_years';
 const CACHE_TTL = 24 * 60 * 60 * 1000; // 24 hours
 
 export interface Company {
@@ -104,8 +105,37 @@ export const companyService = {
     };
   },
 
+  async getAvailableFiscalYears(): Promise<FiscalYear[]> {
+    const cached = await AsyncStorage.getItem(ALL_FISCAL_YEARS_CACHE_KEY);
+    if (cached) {
+      const { data, timestamp } = JSON.parse(cached);
+      if (Date.now() - timestamp < CACHE_TTL) return data;
+    }
+
+    try {
+      const res = await fetchResource('Fiscal Year', {
+        fields: '["name", "year_start_date", "year_end_date"]',
+        order_by: 'year_start_date desc',
+        limit_page_length: 20
+      });
+      
+      const years = res?.data || [];
+      if (years.length > 0) {
+        await AsyncStorage.setItem(ALL_FISCAL_YEARS_CACHE_KEY, JSON.stringify({
+          data: years,
+          timestamp: Date.now()
+        }));
+      }
+      return years;
+    } catch (err) {
+      console.error("Error fetching all fiscal years:", err);
+      return [];
+    }
+  },
+
   async clearCache(): Promise<void> {
     await AsyncStorage.removeItem(COMPANIES_CACHE_KEY);
     await AsyncStorage.removeItem(FISCAL_YEAR_CACHE_KEY);
+    await AsyncStorage.removeItem(ALL_FISCAL_YEARS_CACHE_KEY);
   }
 };

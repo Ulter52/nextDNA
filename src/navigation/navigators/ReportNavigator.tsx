@@ -4,6 +4,7 @@ import { ReportsStackParamList } from '../types';
 
 // Screens
 import { FinancialReportsScreen } from '../../modules/report/screens/financialReports';
+import { ReportViewerScreen } from '../../modules/report/screens/reportViewer';
 
 const Stack = createNativeStackNavigator<ReportsStackParamList>();
 
@@ -14,10 +15,8 @@ export function ReportNavigator() {
         headerShown: false, // We use ModuleLayout's custom header instead
       }}
     >
-      <Stack.Screen 
-        name="ReportsHub" 
-        component={FinancialReportsScreen} 
-      />
+      <Stack.Screen name="ReportsHub" component={FinancialReportsScreen} />
+      <Stack.Screen name="ReportViewer" component={ReportViewerScreen} />
     </Stack.Navigator>
   );
 }

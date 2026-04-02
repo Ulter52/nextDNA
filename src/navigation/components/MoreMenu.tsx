@@ -1,24 +1,24 @@
 import React, { useEffect, useState } from 'react';
-import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  ScrollView, 
-  Modal, 
+import {
+  View,
+  Text,
+  TouchableOpacity,
+  StyleSheet,
+  ScrollView,
+  Modal,
   ActivityIndicator,
   Dimensions
 } from 'react-native';
-import { 
-  Users, 
-  FileText, 
-  Settings, 
-  LogOut, 
-  X, 
-  ChevronRight, 
-  CreditCard, 
-  BarChart3, 
-  Truck, 
+import {
+  Users,
+  FileText,
+  Settings,
+  LogOut,
+  X,
+  ChevronRight,
+  CreditCard,
+  BarChart3,
+  Truck,
   ShieldCheck,
   LayoutGrid,
   RefreshCw,
@@ -118,10 +118,10 @@ export function MoreMenu({ isOpen, onClose, onNavigate, user, onLogout }: MoreMe
       onRequestClose={onClose}
     >
       <View style={styles.overlay}>
-        <TouchableOpacity 
-          style={styles.backdrop} 
-          activeOpacity={1} 
-          onPress={onClose} 
+        <TouchableOpacity
+          style={styles.backdrop}
+          activeOpacity={1}
+          onPress={onClose}
         />
         <View style={styles.menuPanel}>
           <View style={styles.header}>
@@ -133,7 +133,7 @@ export function MoreMenu({ isOpen, onClose, onNavigate, user, onLogout }: MoreMe
 
           <ScrollView style={styles.scrollContent} showsVerticalScrollIndicator={false}>
             {/* User Section */}
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={() => { onNavigate('settings'); onClose(); }}
               style={styles.userCard}
               activeOpacity={0.7}
@@ -156,7 +156,7 @@ export function MoreMenu({ isOpen, onClose, onNavigate, user, onLogout }: MoreMe
                   <RefreshCw size={12} color={loading ? "#2563eb" : "#9ca3af"} />
                 </TouchableOpacity>
               </View>
-              
+
               {loading && workspaces.length === 0 ? (
                 <View style={styles.loadingBox}>
                   <ActivityIndicator size="small" color="#2563eb" />
@@ -211,7 +211,7 @@ export function MoreMenu({ isOpen, onClose, onNavigate, user, onLogout }: MoreMe
           </ScrollView>
 
           <View style={styles.footer}>
-            <TouchableOpacity 
+            <TouchableOpacity
               onPress={onLogout}
               style={styles.logoutButton}
             >

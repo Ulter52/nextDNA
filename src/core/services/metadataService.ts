@@ -54,6 +54,26 @@ export const metadataService = {
     });
   },
 
+  getSupplierGroups: (search?: string) => {
+    const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
+    return fetchResource('Supplier Group', {
+      fields: '["name"]',
+      filters,
+      limit_page_length: 100,
+      order_by: 'name asc'
+    });
+  },
+
+  getCustomers: (search?: string) => {
+    const filters = search ? `[["customer_name", "like", "%${search}%"]]` : undefined;
+    return fetchResource('Customer', {
+      fields: '["name", "customer_name"]',
+      filters,
+      limit_page_length: 100,
+      order_by: 'customer_name asc'
+    });
+  },
+
   getSupplierDetails: (supplier: string) => {
     return fetchResource(`Supplier/${supplier}`);
   },
@@ -148,13 +168,70 @@ export const metadataService = {
     });
   },
 
-  getItems: (search?: string) => {
-    const filters = search ? `[["item_name", "like", "%${search}%"]]` : undefined;
-    return fetchResource('Item', {
-      fields: '["name", "item_name", "stock_uom", "has_serial_no", "barcode", "valuation_rate", "item_tax_template"]',
+  getPriceLists: (search?: string) => {
+    const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
+    return fetchResource('Price List', { 
+      fields: '["name"]', 
       filters,
+      limit_page_length: 100,
+      order_by: 'name asc'
+    });
+  },
+
+  getItems: (search?: string) => {
+    const filters: any[] = [["disabled", "=", 0]];
+    if (search) {
+      filters.push(["item_name", "like", `%${search}%`]);
+    }
+    
+    return fetchResource('Item', {
+      fields: '["name", "item_name", "stock_uom", "has_serial_no", "valuation_rate"]',
+      filters: JSON.stringify(filters),
       limit_page_length: 50,
       order_by: 'name asc'
+    });
+  },
+
+  getCountries: (search?: string) => {
+    const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
+    return fetchResource('Country', { fields: '["name"]', filters, limit_page_length: 250 });
+  },
+
+  getStates: (country?: string, search?: string) => {
+    const filters: any[] = [];
+    if (country) filters.push(["country", "=", country]);
+    if (search) filters.push(["name", "like", `%${search}%`]);
+    
+    return fetchResource('State', { 
+      fields: '["name"]', 
+      filters: filters.length > 0 ? JSON.stringify(filters) : undefined,
+      limit_page_length: 100,
+      order_by: 'name asc'
+    });
+  },
+
+  getCurrencies: (search?: string) => {
+    const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
+    return fetchResource('Currency', { fields: '["name"]', filters, limit_page_length: 200 });
+  },
+
+  getPaymentTerms: (search?: string) => {
+    const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
+    return fetchResource('Payment Terms Template', { fields: '["name"]', filters, limit_page_length: 100 });
+  },
+
+  getGSTCategories: () => {
+    return Promise.resolve({
+      data: [
+        { name: 'Registered Regular' },
+        { name: 'Registered Composition' },
+        { name: 'Unregistered' },
+        { name: 'Consumer' },
+        { name: 'Overseas' },
+        { name: 'Special Economic Zone' },
+        { name: 'Deemed Export' },
+        { name: 'UIN Holders' }
+      ]
     });
   },
 
@@ -162,32 +239,40 @@ export const metadataService = {
    * Smart lookup for barcodes that could be Item codes, Item Barcodes, or Serial Numbers.
    */
   lookupBarcode: async (barcode: string) => {
-    // 1. Try lookup as Item Code or Item Barcode
-    const itemFilters = [
-      ["disabled", "=", 0],
-      ["barcode", "=", barcode]
-    ];
-    
+    // 1. Try lookup as Item Code directly (name)
     let itemRes = await fetchResource('Item', {
-      fields: '["name", "item_name", "stock_uom", "has_serial_no", "item_tax_template", "valuation_rate"]',
-      filters: JSON.stringify(itemFilters),
+      fields: '["name", "item_name", "stock_uom", "has_serial_no", "valuation_rate"]',
+      filters: JSON.stringify([["name", "=", barcode]]),
       limit_page_length: 1
     });
 
+    // 2. If not found by name, try lookup via Item Barcode DocType
     if (!itemRes?.data?.length) {
-      // Try searching by name (item_code)
-      itemRes = await fetchResource('Item', {
-        fields: '["name", "item_name", "stock_uom", "has_serial_no", "item_tax_template", "valuation_rate"]',
-        filters: JSON.stringify([["name", "=", barcode]]),
-        limit_page_length: 1
-      });
+      try {
+        const barcodeRes = await fetchResource('Item Barcode', {
+          fields: '["parent"]',
+          filters: JSON.stringify([["barcode", "=", barcode]]),
+          limit_page_length: 1
+        });
+
+        if (barcodeRes?.data?.length > 0) {
+          const itemCode = barcodeRes.data[0].parent;
+          itemRes = await fetchResource('Item', {
+            fields: '["name", "item_name", "stock_uom", "has_serial_no", "valuation_rate"]',
+            filters: JSON.stringify([["name", "=", itemCode]]),
+            limit_page_length: 1
+          });
+        }
+      } catch (e) {
+        console.log("Item Barcode lookup failed");
+      }
     }
 
     if (itemRes?.data?.length > 0) {
       return { type: 'item', item: itemRes.data[0] };
     }
 
-    // 2. Try lookup as Serial No
+    // 3. Try lookup as Serial No
     const snRes = await fetchResource('Serial No', {
       fields: '["name", "item_code"]',
       filters: JSON.stringify([["name", "=", barcode]]),
@@ -197,7 +282,7 @@ export const metadataService = {
     if (snRes?.data?.length > 0) {
       const sn = snRes.data[0];
       const itemDetail = await fetchResource('Item', {
-        fields: '["name", "item_name", "stock_uom", "has_serial_no", "item_tax_template", "valuation_rate"]',
+        fields: '["name", "item_name", "stock_uom", "has_serial_no", "valuation_rate"]',
         filters: JSON.stringify([["name", "=", sn.item_code]]),
         limit_page_length: 1
       });
