@@ -39,7 +39,8 @@ export const dashboardService = {
       customersRes,
       todaySalesRes,
       binRes,
-      itemsRes
+      itemsRes,
+      soAnalysisRes
     ] = await Promise.all([
       dashboardApi.getRecentInvoices(company, 5),
       dashboardApi.getSalesAnalytics(company, financialYear.from_date, today),
@@ -60,7 +61,8 @@ export const dashboardService = {
         fields: '["name", "valuation_rate"]',
         filters: JSON.stringify([["disabled", "=", 0]]),
         limit_page_length: 1000
-      })
+      }),
+      dashboardApi.getSalesOrderAnalysis(company)
     ]);
 
     const stats: SalesStats = {
@@ -81,7 +83,6 @@ export const dashboardService = {
     const parseAnalytics = (res: any, debugName: string) => {
       const analytics = res?.result || [];
       const columns = res?.columns || [];
-      
       const totalRow = analytics.find((row: any) => {
         const firstVal = Array.isArray(row) ? row[0] : (row.name || row.item_group || row.customer || "");
         return String(firstVal).toLowerCase().trim() === 'total';
@@ -92,14 +93,8 @@ export const dashboardService = {
         columns.forEach((col: any, idx: number) => {
           const label = col.label || "";
           const fieldname = col.fieldname || "";
-          
           if (label.toLowerCase().includes('total') || fieldname.toLowerCase() === 'total') return;
-
-          let monthKey = monthNames.find(m => 
-            label.toLowerCase().includes(m.toLowerCase()) || 
-            fieldname.toLowerCase().includes(m.toLowerCase())
-          );
-
+          let monthKey = monthNames.find(m => label.toLowerCase().includes(m.toLowerCase()) || fieldname.toLowerCase().includes(m.toLowerCase()));
           if (monthKey) {
             const rawVal = Array.isArray(totalRow) ? totalRow[idx] : totalRow[fieldname];
             const val = typeof rawVal === 'string' ? parseFloat(rawVal.replace(/,/g, '')) : Number(rawVal);
@@ -113,9 +108,7 @@ export const dashboardService = {
     const padAnalytics = (data: { label: string; value: number }[], startDate: Date) => {
       const orderedMonths = Array.from({ length: 12 }, (_, i) => monthNames[(startDate.getMonth() + i) % 12]);
       return orderedMonths.map(m => {
-        // Find all matches for the month
         const matches = data.filter(d => d.label === m);
-        // Take the LAST match found in the chronological report (skips leading carry-over columns)
         const found = matches.length > 0 ? matches[matches.length - 1] : null;
         return { label: m, value: found ? found.value : 0 };
       });
@@ -123,16 +116,13 @@ export const dashboardService = {
 
     const rawFySales = parseAnalytics(analyticsRes, 'Current FY');
     const rawPrevFySales = parseAnalytics(prevAnalyticsRes, 'Previous FY');
-
     stats.fy_monthly_sales = padAnalytics(rawFySales, fyStart);
     stats.prev_fy_monthly_sales = padAnalytics(rawPrevFySales, fyStart);
 
-    // Trend Calculation
     if (rawFySales.length > 0) {
       const activeMonths = rawFySales.filter(m => m.value > 0);
       const currentMonthData = activeMonths.length > 0 ? activeMonths[activeMonths.length - 1] : rawFySales[rawFySales.length - 1];
       stats.monthly_sales = currentMonthData.value;
-
       let compareValue = 0;
       if (rawFySales.length === 1 || (activeMonths.length === 1 && currentMonthData.label === monthNames[fyStart.getMonth()])) {
         const sameMonthLY = stats.prev_fy_monthly_sales.find(m => m.label === currentMonthData.label);
@@ -140,7 +130,6 @@ export const dashboardService = {
       } else {
         const timeline = [...stats.prev_fy_monthly_sales, ...stats.fy_monthly_sales];
         const currentIdxInTimeline = 12 + stats.fy_monthly_sales.findIndex(m => m.label === currentMonthData.label);
-        
         for (let i = currentIdxInTimeline - 1; i >= 0; i--) {
           if (timeline[i].value > 0) {
             compareValue = timeline[i].value;
@@ -148,7 +137,6 @@ export const dashboardService = {
           }
         }
       }
-
       if (compareValue > 0) {
         stats.trend = parseFloat(((stats.monthly_sales - compareValue) / compareValue * 100).toFixed(1));
       } else if (stats.monthly_sales > 0) {
@@ -200,20 +188,43 @@ export const dashboardService = {
     const bins = binRes?.data || [];
     const items = itemsRes?.data || [];
     const itemMap = items.reduce((acc: any, it: any) => ({ ...acc, [it.name]: it }), {});
-
     let totalInvValue = 0;
     bins.forEach((bin: any) => {
       const qty = parseFloat(bin.actual_qty || 0);
       const rate = parseFloat(bin.valuation_rate || itemMap[bin.item_code]?.valuation_rate || 0);
-      if (qty > 0) {
-        totalInvValue += (qty * rate);
-      }
+      if (qty > 0) totalInvValue += (qty * rate);
     });
-    
     stats.inventory = { total_value: totalInvValue || 0, low_stock_count: 0, dead_stock_count: 0 };
-    if (!todaySalesRes?.data?.length) stats.alerts.push({ id: 'no_sales', type: 'warning', message: 'No sales recorded yet today.' });
-    stats.conversion = { quote_to_order: Math.round(((ordersRes?.data?.length || 0) / (quotesRes?.data?.length || 1)) * 100), order_to_invoice: 95 };
 
+    // Process Sales Order Analysis for Conversion Funnel
+    const soResult = soAnalysisRes?.result || [];
+    const soColumns = soAnalysisRes?.columns || [];
+    const soTotalRow = soResult.find((row: any) => {
+      const firstVal = Array.isArray(row) ? row[0] : (row.name || row.customer || "");
+      return String(firstVal).toLowerCase().trim() === 'total';
+    });
+
+    if (soTotalRow && soColumns.length > 0) {
+      const getSOVal = (label: string) => {
+        const idx = soColumns.findIndex((c: any) => (c.label || '').toLowerCase().includes(label.toLowerCase()));
+        if (idx === -1) return 0;
+        const val = Array.isArray(soTotalRow) ? soTotalRow[idx] : soTotalRow[soColumns[idx].fieldname];
+        return typeof val === 'string' ? parseFloat(val.replace(/,/g, '')) : Number(val) || 0;
+      };
+
+      const amount = getSOVal('Amount');
+      const billedAmount = getSOVal('Billed Amount');
+      
+      stats.conversion = {
+        quote_to_order: 0, // Placeholder as requested to focus on SO to Invoice
+        order_to_invoice: amount > 0 ? Math.round((billedAmount / amount) * 100) : 0
+      };
+    } else {
+      stats.conversion = { quote_to_order: 0, order_to_invoice: 0 };
+    }
+
+    if (!todaySalesRes?.data?.length) stats.alerts.push({ id: 'no_sales', type: 'warning', message: 'No sales recorded yet today.' });
+    
     return stats;
   }
 };

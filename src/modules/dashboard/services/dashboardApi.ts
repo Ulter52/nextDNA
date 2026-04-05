@@ -64,6 +64,10 @@ export const dashboardApi = {
     });
   },
 
+  async getSalesOrderAnalysis(company: string) {
+    return await runReport('Sales Order Analysis', { company });
+  },
+
   async getQuotationsCount(company: string) {
     const filters = company ? JSON.stringify([['company', '=', company]]) : undefined;
     return await fetchResource('Quotation', { filters, limit_page_length: 100, fields: '["name"]' });
