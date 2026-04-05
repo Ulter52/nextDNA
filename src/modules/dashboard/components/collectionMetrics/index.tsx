@@ -1,5 +1,5 @@
 import React from 'react';
-import { View, Text, TouchableOpacity } from 'react-native';
+import { View, Text } from 'react-native';
 import { formatLakhs } from '@utils/formatters';
 import { styles } from './styles';
 
@@ -14,9 +14,11 @@ interface CollectionMetricsProps {
 }
 
 export const CollectionMetrics: React.FC<CollectionMetricsProps> = ({ collections, totalSales }) => {
-  const totalSalesForBar = totalSales || 1;
-  const cashSalesWidth = (collections.cash_sales / totalSalesForBar) * 100;
-  const creditSalesWidth = (collections.credit_sales / totalSalesForBar) * 100;
+  // Use the larger of totalSales or (cash + credit) to ensure the bar represents the full context
+  const totalContext = Math.max(totalSales, collections.cash_sales + collections.credit_sales, 1);
+  
+  const cashSalesWidth = (collections.cash_sales / totalContext) * 100;
+  const creditSalesWidth = (collections.credit_sales / totalContext) * 100;
 
   return (
     <View style={styles.collectionsCard}>
@@ -38,8 +40,8 @@ export const CollectionMetrics: React.FC<CollectionMetricsProps> = ({ collection
       </View>
       
       <View style={styles.progressBarBg}>
-        <View style={[styles.progressBarFill, { width: `${cashSalesWidth}%`, backgroundColor: '#10b981' }]} />
-        <View style={[styles.progressBarFill, { width: `${creditSalesWidth}%`, backgroundColor: '#f59e0b' }]} />
+        <View style={[styles.progressBarFill, { width: `${Math.min(cashSalesWidth, 100)}%`, backgroundColor: '#10b981' }]} />
+        <View style={[styles.progressBarFill, { width: `${Math.min(creditSalesWidth, 100 - cashSalesWidth)}%`, backgroundColor: '#f59e0b' }]} />
       </View>
 
       <View style={styles.arSummary}>

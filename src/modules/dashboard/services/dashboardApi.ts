@@ -1,24 +1,22 @@
 import { fetchResource, runReport } from '@core/api/frappeApiHelpers';
 
 export const dashboardApi = {
-  async getCompanies() {
-    return await fetchResource('Company', {
-      fields: '["name", "company_name", "default_currency"]',
-      limit_page_length: 1,
-    });
-  },
-
-  async getRecentInvoices(limit = 5) {
+  async getRecentInvoices(company: string, limit = 5) {
+    const filters = company ? JSON.stringify([['company', '=', company]]) : undefined;
     return await fetchResource('Sales Invoice', {
       fields: '["name", "customer_name", "posting_date", "grand_total", "status", "currency"]',
+      filters,
       order_by: 'posting_date desc',
       limit_page_length: limit,
     });
   },
 
-  async getTodaySales(today: string) {
+  async getTodaySales(company: string, today: string) {
+    const filters = [['posting_date', '=', today]];
+    if (company) filters.push(['company', '=', company]);
+    
     return await fetchResource('Sales Invoice', {
-      filters: JSON.stringify([['posting_date', '=', today]]),
+      filters: JSON.stringify(filters),
       limit_page_length: 1
     });
   },
@@ -61,15 +59,18 @@ export const dashboardApi = {
     });
   },
 
-  async getQuotationsCount() {
-    return await fetchResource('Quotation', { limit_page_length: 100, fields: '["name"]' });
+  async getQuotationsCount(company: string) {
+    const filters = company ? JSON.stringify([['company', '=', company]]) : undefined;
+    return await fetchResource('Quotation', { filters, limit_page_length: 100, fields: '["name"]' });
   },
 
-  async getSalesOrdersCount() {
-    return await fetchResource('Sales Order', { limit_page_length: 100, fields: '["name"]' });
+  async getSalesOrdersCount(company: string) {
+    const filters = company ? JSON.stringify([['company', '=', company]]) : undefined;
+    return await fetchResource('Sales Order', { filters, limit_page_length: 100, fields: '["name"]' });
   },
 
   async getCustomersCount() {
+    // Customers are typically global, but can be linked to company if needed
     return await fetchResource('Customer', { limit_page_length: 1, fields: '["name"]' });
   }
 };

@@ -1,10 +1,10 @@
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { View, Text, TouchableOpacity, ScrollView, ActivityIndicator, RefreshControl } from 'react-native';
-import { dashboardService } from '../../services/dashboardService';
-import { SalesStats } from '../../types';
-import { ModuleLayout } from '../../../../core/components/ModuleLayout';
-import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+
+import { useDashboardStats } from '../../hooks/dashboardQueries';
+import { ModuleLayout } from '../../../../core/components/ModuleLayout';
 
 // Modular Components
 import { AlertSection } from '../../components/alertSection';
@@ -18,63 +18,76 @@ import { AgingReportModal } from '../../components/agingChart/agingReportModal';
 import { styles } from './styles';
 
 export function DashboardScreen() {
-  const [stats, setStats] = useState<SalesStats | null>(null);
-  const [loading, setLoading] = useState(true);
-  const [refreshing, setRefreshing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<string | null>(null);
   const [agingModalVisible, setAgingModalVisible] = useState(false);
   
   const navigation = useNavigation<any>();
 
-  const fetchStats = useCallback(async (force = false) => {
-    if (force) setRefreshing(true);
-    else if (!stats) setLoading(true); // Only show full loader if no data exists
-
-    setError(null);
-    try {
-      const data = await dashboardService.getDashboardStats(force);
-      setStats(data);
-    } catch (err: any) {
-      setError(err.message || "Failed to load dashboard");
-    } finally {
-      setLoading(false);
-      setRefreshing(false);
-    }
-  }, [stats]);
+  const { 
+    data: stats, 
+    isLoading, 
+    isRefetching, 
+    error, 
+    refetch 
+  } = useDashboardStats();
 
   useEffect(() => {
     AsyncStorage.getItem('erp_user').then(setUser);
-    fetchStats();
   }, []);
 
-  const onRefresh = useCallback(() => {
-    fetchStats(true);
-  }, [fetchStats]);
-
-  const agingData = stats?.collections?.aging_ranges || [
+  const agingData = useMemo(() => stats?.collections?.aging_ranges || [
     { range: '0-30', amount: 0, color: '#10b981' },
     { range: '31-60', amount: 0, color: '#f59e0b' },
     { range: '61-90', amount: 0, color: '#f97316' },
     { range: '91-120', amount: 0, color: '#ef4444' },
     { range: '121+', amount: 0, color: '#b91c1c' }
-  ];
+  ], [stats?.collections?.aging_ranges]);
+
+  const onRefresh = React.useCallback(() => {
+    refetch();
+  }, [refetch]);
+
+  if (error) {
+    return (
+      <ModuleLayout title="Overview" user={user}>
+        <View style={styles.loadingContainer}>
+          <Text style={{ color: '#ef4444', fontWeight: '600', marginBottom: 8 }}>Unable to load dashboard</Text>
+          <Text style={{ color: '#64748b', textAlign: 'center', marginBottom: 16 }}>
+            {(error as any).message || 'An unexpected error occurred while fetching your stats.'}
+          </Text>
+          <TouchableOpacity onPress={() => refetch()} style={styles.retryButton}>
+            <Text style={styles.retryButtonText}>Retry</Text>
+          </TouchableOpacity>
+        </View>
+      </ModuleLayout>
+    );
+  }
+
+  const collectionsData = useMemo(() => stats?.collections || { 
+    cash_sales: 0, 
+    credit_sales: 0, 
+    total_outstanding: 0, 
+    efficiency: 0 
+  }, [stats?.collections]);
 
   return (
     <ModuleLayout title="Overview" user={user}>
-      {loading && !stats ? (
+      {isLoading && !stats ? (
         <View style={styles.loadingContainer}>
           <ActivityIndicator size="large" color="#2563eb" />
+          <Text style={{ marginTop: 12, color: '#64748b' }}>Preparing your dashboard...</Text>
         </View>
       ) : (
         <ScrollView
           contentContainerStyle={styles.container}
           showsVerticalScrollIndicator={false}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#2563eb" />
+            <RefreshControl refreshing={isRefetching} onRefresh={onRefresh} tintColor="#2563eb" />
           }
         >
-          <AlertSection alerts={stats?.alerts} />
+          {stats?.alerts && stats.alerts.length > 0 && (
+            <AlertSection alerts={stats.alerts} />
+          )}
 
           <RevenueHero
             monthlySales={stats?.monthly_sales || 0}
@@ -88,7 +101,7 @@ export function DashboardScreen() {
               <Text style={styles.sectionLabel}>Collections & Cash Flow</Text>
             </View>
             <CollectionMetrics
-              collections={stats?.collections || { cash_sales: 0, credit_sales: 0, total_outstanding: 0, efficiency: 0 }}
+              collections={collectionsData}
               totalSales={stats?.total_sales || 0}
             />
           </View>
@@ -96,7 +109,7 @@ export function DashboardScreen() {
           <View style={styles.section}>
             <View style={styles.headerWithAction}>
               <Text style={styles.sectionLabel}>Receivables Aging</Text>
-              <TouchableOpacity onPress={() => setAgingModalVisible(true)}>
+              <TouchableOpacity onPress={() => setAgingModalVisible(true)} activeOpacity={0.6}>
                 <Text style={styles.actionText}>Aging Report</Text>
               </TouchableOpacity>
             </View>
@@ -116,7 +129,10 @@ export function DashboardScreen() {
           <View style={styles.section}>
             <View style={styles.headerWithAction}>
               <Text style={styles.sectionLabel}>Recent Invoices</Text>
-              <TouchableOpacity onPress={() => navigation.navigate('SellingTab', { screen: 'SalesInvoiceList' })}>
+              <TouchableOpacity 
+                onPress={() => navigation.navigate('SellingTab', { screen: 'SalesInvoiceList' })}
+                activeOpacity={0.6}
+              >
                 <Text style={styles.actionText}>View All</Text>
               </TouchableOpacity>
             </View>
