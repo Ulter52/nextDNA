@@ -49,6 +49,11 @@ export const dashboardApi = {
     });
   },
 
+  async getInventoryBalance(company: string) {
+    // 'Stock Balance' is the standard ERPNext report for current valuation
+    return await runReport('Stock Balance', { company });
+  },
+
   async getStockAnalytics(company: string, fromDate: string, toDate: string) {
     return await runReport('Stock Analytics', { 
       value_quantity: 'Value', 
@@ -70,7 +75,6 @@ export const dashboardApi = {
   },
 
   async getCustomersCount() {
-    // Customers are typically global, but can be linked to company if needed
     return await fetchResource('Customer', { limit_page_length: 1, fields: '["name"]' });
   }
 };

@@ -3,6 +3,7 @@ import { dashboardApi } from './dashboardApi';
 import { getDateRanges } from '../../../core/utils/dateHelpers';
 import { calculateCEI } from '../../../core/utils/CEI';
 import { companyService } from '../../../core/services/companyService';
+import { fetchResource } from '../../../core/api/frappeApiHelpers';
 
 export const dashboardService = {
   async getDashboardStats(): Promise<SalesStats> {
@@ -21,7 +22,6 @@ export const dashboardService = {
     const fyStart = new Date(fy.year_start_date);
     const fyEnd = new Date(fy.year_end_date);
     
-    // Exact same date range for previous year
     const prevFinancialYear = {
       from_date: new Date(fyStart.getFullYear() - 1, fyStart.getMonth(), fyStart.getDate()).toISOString().split('T')[0],
       to_date: new Date(fyEnd.getFullYear() - 1, fyEnd.getMonth(), fyEnd.getDate()).toISOString().split('T')[0]
@@ -38,7 +38,8 @@ export const dashboardService = {
       ordersRes, 
       customersRes,
       todaySalesRes,
-      stockAnalyticsRes
+      binRes,
+      itemsRes
     ] = await Promise.all([
       dashboardApi.getRecentInvoices(company, 5),
       dashboardApi.getSalesAnalytics(company, financialYear.from_date, today),
@@ -50,7 +51,16 @@ export const dashboardService = {
       dashboardApi.getSalesOrdersCount(company),
       dashboardApi.getCustomersCount(),
       dashboardApi.getTodaySales(company, today),
-      dashboardApi.getStockAnalytics(company, financialYear.from_date, financialYear.to_date)
+      fetchResource('Bin', { 
+        fields: '["item_code", "actual_qty", "valuation_rate"]', 
+        filters: JSON.stringify([["actual_qty", ">", 0]]),
+        limit_page_length: 5000 
+      }),
+      fetchResource('Item', {
+        fields: '["name", "valuation_rate"]',
+        filters: JSON.stringify([["disabled", "=", 0]]),
+        limit_page_length: 1000
+      })
     ]);
 
     const stats: SalesStats = {
@@ -67,14 +77,11 @@ export const dashboardService = {
     };
 
     const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-    const getMonthKey = (label: string) => {
-      const cleanLabel = label.split(' ')[0];
-      return monthNames.find(m => cleanLabel.toLowerCase().startsWith(m.toLowerCase()));
-    };
-
-    const parseAnalytics = (res: any) => {
+    
+    const parseAnalytics = (res: any, debugName: string) => {
       const analytics = res?.result || [];
       const columns = res?.columns || [];
+      
       const totalRow = analytics.find((row: any) => {
         const firstVal = Array.isArray(row) ? row[0] : (row.name || row.item_group || row.customer || "");
         return String(firstVal).toLowerCase().trim() === 'total';
@@ -83,11 +90,20 @@ export const dashboardService = {
       const monthlyData: { label: string; value: number }[] = [];
       if (totalRow && columns.length > 0) {
         columns.forEach((col: any, idx: number) => {
-          const monthKey = getMonthKey(col.label || "");
-          // Exclude the 'Total' column itself in the analytics report
-          if (monthKey && col.fieldname !== 'total' && col.label !== 'Total') {
-            const val = Array.isArray(totalRow) ? totalRow[idx] : totalRow[col.fieldname];
-            monthlyData.push({ label: monthKey, value: Number(val) || 0 });
+          const label = col.label || "";
+          const fieldname = col.fieldname || "";
+          
+          if (label.toLowerCase().includes('total') || fieldname.toLowerCase() === 'total') return;
+
+          let monthKey = monthNames.find(m => 
+            label.toLowerCase().includes(m.toLowerCase()) || 
+            fieldname.toLowerCase().includes(m.toLowerCase())
+          );
+
+          if (monthKey) {
+            const rawVal = Array.isArray(totalRow) ? totalRow[idx] : totalRow[fieldname];
+            const val = typeof rawVal === 'string' ? parseFloat(rawVal.replace(/,/g, '')) : Number(rawVal);
+            monthlyData.push({ label: monthKey, value: val || 0 });
           }
         });
       }
@@ -97,35 +113,46 @@ export const dashboardService = {
     const padAnalytics = (data: { label: string; value: number }[], startDate: Date) => {
       const orderedMonths = Array.from({ length: 12 }, (_, i) => monthNames[(startDate.getMonth() + i) % 12]);
       return orderedMonths.map(m => {
-        const found = data.find(d => d.label === m);
+        // Find all matches for the month
+        const matches = data.filter(d => d.label === m);
+        // Take the LAST match found in the chronological report (skips leading carry-over columns)
+        const found = matches.length > 0 ? matches[matches.length - 1] : null;
         return { label: m, value: found ? found.value : 0 };
       });
     };
 
-    const rawFySales = parseAnalytics(analyticsRes);
-    const rawPrevFySales = parseAnalytics(prevAnalyticsRes);
+    const rawFySales = parseAnalytics(analyticsRes, 'Current FY');
+    const rawPrevFySales = parseAnalytics(prevAnalyticsRes, 'Previous FY');
 
     stats.fy_monthly_sales = padAnalytics(rawFySales, fyStart);
     stats.prev_fy_monthly_sales = padAnalytics(rawPrevFySales, fyStart);
 
-    // Calculate Trend
+    // Trend Calculation
     if (rawFySales.length > 0) {
-      const currentMonthData = rawFySales[rawFySales.length - 1];
+      const activeMonths = rawFySales.filter(m => m.value > 0);
+      const currentMonthData = activeMonths.length > 0 ? activeMonths[activeMonths.length - 1] : rawFySales[rawFySales.length - 1];
       stats.monthly_sales = currentMonthData.value;
-      
-      // Determine what to compare against
+
       let compareValue = 0;
-      if (rawFySales.length >= 2) {
-        // Normal MoM within same FY
-        compareValue = rawFySales[rawFySales.length - 2].value;
-      } else {
-        // First month of FY (April) -> Compare against same month last year (April LY)
-        const sameMonthLY = rawPrevFySales.find(m => m.label === currentMonthData.label);
+      if (rawFySales.length === 1 || (activeMonths.length === 1 && currentMonthData.label === monthNames[fyStart.getMonth()])) {
+        const sameMonthLY = stats.prev_fy_monthly_sales.find(m => m.label === currentMonthData.label);
         if (sameMonthLY) compareValue = sameMonthLY.value;
+      } else {
+        const timeline = [...stats.prev_fy_monthly_sales, ...stats.fy_monthly_sales];
+        const currentIdxInTimeline = 12 + stats.fy_monthly_sales.findIndex(m => m.label === currentMonthData.label);
+        
+        for (let i = currentIdxInTimeline - 1; i >= 0; i--) {
+          if (timeline[i].value > 0) {
+            compareValue = timeline[i].value;
+            break;
+          }
+        }
       }
 
       if (compareValue > 0) {
         stats.trend = parseFloat(((stats.monthly_sales - compareValue) / compareValue * 100).toFixed(1));
+      } else if (stats.monthly_sales > 0) {
+        stats.trend = 100;
       }
     }
 
@@ -170,17 +197,20 @@ export const dashboardService = {
       };
     }
 
-    const stockResult = stockAnalyticsRes?.result || [];
-    const stockTotal = stockResult.find((row: any) => Array.isArray(row) ? (row[0] === 'Total') : (row.name === 'Total'));
+    const bins = binRes?.data || [];
+    const items = itemsRes?.data || [];
+    const itemMap = items.reduce((acc: any, it: any) => ({ ...acc, [it.name]: it }), {});
+
     let totalInvValue = 0;
-    if (stockTotal) {
-      if (Array.isArray(stockTotal)) totalInvValue = Number(stockTotal[stockTotal.length - 1]) || 0;
-      else {
-        const valCols = (stockAnalyticsRes?.columns || []).filter((c: any) => !['name', 'item_group'].includes(c.fieldname));
-        if (valCols.length > 0) totalInvValue = Number(stockTotal[valCols[valCols.length - 1].fieldname]) || 0;
+    bins.forEach((bin: any) => {
+      const qty = parseFloat(bin.actual_qty || 0);
+      const rate = parseFloat(bin.valuation_rate || itemMap[bin.item_code]?.valuation_rate || 0);
+      if (qty > 0) {
+        totalInvValue += (qty * rate);
       }
-    }
-    stats.inventory = { total_value: totalInvValue, low_stock_count: 0, dead_stock_count: 0 };
+    });
+    
+    stats.inventory = { total_value: totalInvValue || 0, low_stock_count: 0, dead_stock_count: 0 };
     if (!todaySalesRes?.data?.length) stats.alerts.push({ id: 'no_sales', type: 'warning', message: 'No sales recorded yet today.' });
     stats.conversion = { quote_to_order: Math.round(((ordersRes?.data?.length || 0) / (quotesRes?.data?.length || 1)) * 100), order_to_invoice: 95 };
 
