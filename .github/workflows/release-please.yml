@@ -1,0 +1,21 @@
+name: release-please
+
+on:
+  push:
+    branches:
+      - develop
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  release-please:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: googleapis/release-please-action@v4
+        with:
+          # This uses the default GitHub token.
+          # Ensure "Allow GitHub Actions to create and approve pull requests"
+          # is enabled in your repo Settings > Actions > General.
+          token: ${{ secrets.GITHUB_TOKEN }}
