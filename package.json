@@ -1,13 +1,14 @@
 {
   "name": "AwesomeProject2",
-  "version": "0.0.1",
+  "version": "1.0.0",
   "private": true,
   "scripts": {
     "android": "react-native run-android",
     "ios": "react-native run-ios",
     "lint": "eslint .",
     "start": "react-native start",
-    "test": "jest"
+    "test": "jest",
+    "postversion": "sed -i \"s/versionName \\\".*\\\"/versionName \\\"$npm_package_version\\\"/g\" android/app/build.gradle"
   },
   "dependencies": {
     "@google/genai": "^1.29.0",
