@@ -2,7 +2,7 @@
   "packages": {
     ".": {
       "release-type": "node",
-      "package-name": "AwesomeProject2",
+      "package-name": "NextDNA",
       "initial-version": "1.0.0"
     }
   },
