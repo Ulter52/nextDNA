@@ -1,5 +1,6 @@
-import { useInfiniteQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { customerService } from '../services/customerService';
+import { metadataService } from '../../../core/services/metadataService';
 
 export const customerKeys = {
   all: ['customers'] as const,
@@ -7,19 +8,29 @@ export const customerKeys = {
   list: (filters: any) => [...customerKeys.lists(), { filters }] as const,
   details: () => [...customerKeys.all, 'detail'] as const,
   detail: (id: string) => [...customerKeys.details(), id] as const,
+  metadata: (type: string) => [...customerKeys.all, 'metadata', type] as const,
 };
 
-export const useCustomers = (search?: string) => {
+export const useCustomers = (search?: string, filters: any = {}) => {
   return useInfiniteQuery({
-    queryKey: customerKeys.list({ search }),
-    queryFn: ({ pageParam = 0 }) => 
-      customerService.getCustomers(search, pageParam),
+    queryKey: customerKeys.list({ search, ...filters }),
+    queryFn: async ({ pageParam = 0 }) => {
+      const data = await customerService.getCustomers(search, pageParam as number, 20, filters);
+      return data || [];
+    },
     getNextPageParam: (lastPage, allPages) => {
-      // If the last page has 20 items, assume there might be more
-      return lastPage.length === 20 ? allPages.length * 20 : undefined;
+      return lastPage && lastPage.length === 20 ? allPages.length * 20 : undefined;
     },
     initialPageParam: 0,
-    staleTime: 5 * 60 * 1000, // 5 minutes
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+export const useCustomerGroups = () => {
+  return useQuery({
+    queryKey: customerKeys.metadata('groups'),
+    queryFn: () => metadataService.getSupplierGroups().then(r => r?.data || []),
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 
