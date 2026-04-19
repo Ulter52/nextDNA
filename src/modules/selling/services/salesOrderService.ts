@@ -141,13 +141,31 @@ export const sellingService = {
     return response.data.message.result || [];
   },
 
-  async getMonthlySalesTrends(company?: string): Promise<any[]> {
+  async getSalesAnalytics(company: string, fromDate: string, toDate: string): Promise<any> {
+    const response = await apiClient.get('/api/method/frappe.desk.query_report.run', {
+      params: {
+        report_name: 'Sales Analytics',
+        filters: JSON.stringify({
+          company: company,
+          tree_type: 'Customer',
+          doc_type: 'Sales Invoice',
+          value_quantity: 'Value',
+          from_date: fromDate,
+          to_date: toDate,
+          range: 'Monthly'
+        })
+      }
+    });
+    return response.data.message;
+  },
+
+  async getMonthlySalesTrends(company?: string, fromDate: string = '2025-04-01', toDate: string = '2026-03-31'): Promise<any[]> {
     const filters: any = {
       tree_type: 'Item',
       doc_type: 'Sales Invoice',
       value_quantity: 'Value',
-      from_date: '2025-04-01',
-      to_date: '2026-03-31',
+      from_date: fromDate,
+      to_date: toDate,
       range: 'Monthly'
     };
     if (company) {
