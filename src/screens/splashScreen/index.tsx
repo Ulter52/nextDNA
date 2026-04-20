@@ -5,7 +5,7 @@ import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import styles from './styles.tsx';
 import { colors } from '@theme';
-
+import packageJson from '../../../package.json';
 
 export function SplashScreen({ onReady }: { onReady: (user: string | null) => void }) {
   const fadeAnim = new Animated.Value(0);
@@ -51,7 +51,7 @@ export function SplashScreen({ onReady }: { onReady: (user: string | null) => vo
               translucent={false}
             />
       <Animated.View style={[
-        styles.logoContainer, 
+        styles.logoContainer,
         { opacity: fadeAnim, transform: [{ scale: scaleAnim }] }
       ]}>
         <View style={styles.iconBox}>
@@ -60,9 +60,9 @@ export function SplashScreen({ onReady }: { onReady: (user: string | null) => vo
         <Text style={styles.title}>DNA Connect</Text>
         <Text style={styles.subtitle}>Business, Anywhere, Anytime</Text>
       </Animated.View>
-      
+
       <View style={styles.footer}>
-        <Text style={styles.footerText}>v1.0.0</Text>
+        <Text style={styles.footerText}>v{packageJson.version}</Text>
       </View>
     </View>
   );
