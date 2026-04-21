@@ -1,7 +1,8 @@
 import React, { useState } from 'react';
 import { View, Text, TextInput, TouchableOpacity, StyleSheet,
-         ActivityIndicator, ScrollView, SafeAreaView, StatusBar
+         ActivityIndicator, ScrollView, StatusBar
          } from 'react-native';
+import { SafeAreaView } from 'react-native-safe-area-context';
 import { Lock, User, ArrowRight } from 'lucide-react-native';
 import { authService } from '../services/authService';
 import { colors } from '@theme';
