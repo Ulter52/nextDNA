@@ -1,5 +1,20 @@
 # Changelog
 
+## [1.3.0](https://github.com/Ulter52/nextDNA/compare/NextDNA-v1.2.0...NextDNA-v1.3.0) (2026-04-25)
+
+
+### Features
+
+* add monthly revenue trends & optimized query, caching, memo ([3c6fc36](https://github.com/Ulter52/nextDNA/commit/3c6fc36676a4d0b041e85f609857cc342cb486da))
+* infinite customer list with query optimization ([f6becdb](https://github.com/Ulter52/nextDNA/commit/f6becdb47e62def88d210dbcb911b62313ca45d2))
+
+
+### Bug Fixes
+
+* App Version ([a9d7a12](https://github.com/Ulter52/nextDNA/commit/a9d7a12e7314d26cc13b34f99c987c4e738a9f9d))
+* Customer Detail rendering ([ce87de0](https://github.com/Ulter52/nextDNA/commit/ce87de0cae2471aa49b40301426ceb0e28b4e8d4))
+* LoginScreen use react-native-safe-area-context ([29e7566](https://github.com/Ulter52/nextDNA/commit/29e7566a5299e83c69cc510e6e915b89abd4fe6f))
+
 ## [1.2.0](https://github.com/Ulter52/nextDNA/compare/NextDNA-v1.1.0...NextDNA-v1.2.0) (2026-04-07)
 
 
