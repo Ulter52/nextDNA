@@ -7,6 +7,7 @@ export const sellingKeys = {
   orders: (filters: any) => [...sellingKeys.all, 'orders', { filters }] as const,
   orderDetail: (id: string) => [...sellingKeys.all, 'orders', 'detail', id] as const,
   stats: (company?: string, fy?: string) => [...sellingKeys.all, 'stats', company, fy] as const,
+  metadata: (type: string, search?: string) => [...sellingKeys.all, 'metadata', type, { search }] as const,
 };
 
 export const useSalesOrders = (search?: string, status?: string) => {
@@ -28,6 +29,47 @@ export const useSalesOrderDetail = (id: string) => {
     queryFn: () => sellingService.getSalesOrder(id),
     enabled: !!id,
     staleTime: 5 * 60 * 1000,
+  });
+};
+
+export const useCompanies = () => {
+  return useQuery({
+    queryKey: sellingKeys.metadata('companies'),
+    queryFn: () => sellingService.getCompanies(),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+};
+
+export const useSellingItems = (search?: string) => {
+  return useQuery({
+    queryKey: sellingKeys.metadata('items', search),
+    queryFn: () => sellingService.getItems(search),
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+export const useWarehouses = () => {
+  return useQuery({
+    queryKey: sellingKeys.metadata('warehouses'),
+    queryFn: () => sellingService.getWarehouses(),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+};
+
+export const useTaxCategories = () => {
+  return useQuery({
+    queryKey: sellingKeys.metadata('tax-categories'),
+    queryFn: () => sellingService.getTaxCategories(),
+    staleTime: 24 * 60 * 60 * 1000,
+  });
+};
+
+export const useTaxTemplates = (company?: string) => {
+  return useQuery({
+    queryKey: sellingKeys.metadata(`tax-templates-${company || ''}`),
+    queryFn: () => sellingService.getSalesTaxesTemplates(company),
+    enabled: !!company,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 

@@ -1,56 +1,41 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Dimensions, ScrollView, Text, TextInput, TouchableOpacity } from 'react-native';
+import { User, Calendar, FileText, CheckCircle2, Package, Tag, Building2, Plus, Trash2, ShoppingCart, Percent, Truck, Warehouse } from 'lucide-react-native';
+import { useRoute, useNavigation } from '@react-navigation/native';
+
+import { ModuleLayout } from '../../../../core/components/ModuleLayout';
+import { colors, spacing } from '../../../../core/theme';
+import { styles as detailStyles } from '../../../stock/screens/itemDetail/styles';
+
 import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  StyleSheet, 
-  ScrollView, 
-  TextInput, 
-  ActivityIndicator, 
-  Alert 
-} from 'react-native';
-import { 
-  Save, 
-  Plus, 
-  Trash2, 
-  Calendar, 
-  User, 
-  Package,
-  CheckCircle,
-  AlertCircle
-} from 'lucide-react-native';
-import { sellingService } from '@sellingServices/salesOrderService';
-import { customerService } from '@sellingServices/customerService';
-import { ItemSelector } from '@sellingComponents/ItemSelector';
-import { CustomerSelector } from '@sellingComponents/CustomerSelector';
-import { WarehouseSelector } from '@sellingComponents/WarehouseSelector';
-import { CompanySelector } from '@sellingComponents/CompanySelector';
-import { TaxCategorySelector } from '@sellingComponents/TaxCategorySelector';
-import { SalesTaxesTemplateSelector } from '@sellingComponents/SalesTaxesTemplateSelector';
-import { ModuleLayout } from '@core/components/ModuleLayout';
+  useSalesOrderDetail, 
+  useSaveSalesOrder,
+  useCompanies,
+  useSellingItems,
+  useWarehouses,
+  useTaxCategories,
+  useTaxTemplates
+} from '../../hooks/sellingQueries';
+import { useCustomers } from '../../hooks/customerQueries';
+import { sellingService } from '../../services/salesOrderService';
+
+import { FormInput } from '../../../../core/components/FormInput';
+import { Selector } from '../../../../core/components/Selector';
+import { SaveSection } from '../../../../core/components/SaveSection';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-import { useNavigation } from '@react-navigation/native';
-import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SellingStackParamList } from '@navigation/types';
-import styles from './styles';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 export function NewSalesOrder() {
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
+  const route = useRoute<any>();
+  const navigation = useNavigation<any>();
+  const { orderId } = route.params || {};
+  const isEdit = !!orderId;
+
   const [user, setUser] = useState<string | null>(null);
+  const [itemSearch, setItemSearch] = useState('');
   
-  const navigation = useNavigation<NativeStackNavigationProp<SellingStackParamList>>();
-
-  const [customers, setCustomers] = useState<any[]>([]);
-  const [items, setItems] = useState<any[]>([]);
-  const [companies, setCompanies] = useState<any[]>([]);
-  const [warehouses, setWarehouses] = useState<any[]>([]);
-  const [taxCategories, setTaxCategories] = useState<any[]>([]);
-  const [taxTemplates, setTaxTemplates] = useState<any[]>([]);
-
-  const [formData, setFormData] = useState({
+  const [formData, setFormData] = useState<any>({
     company: '',
     customer: '',
     transaction_date: new Date().toISOString().split('T')[0],
@@ -64,85 +49,66 @@ export function NewSalesOrder() {
     selling_price_list: 'Standard Selling'
   });
 
+  const { data: orderDetail, isLoading: loadingDetail } = useSalesOrderDetail(orderId || '');
+  const { data: companies, isLoading: loadingCompanies } = useCompanies();
+  const { data: customerRes } = useCustomers();
+  const { data: items, isLoading: loadingItems } = useSellingItems(itemSearch);
+  const { data: warehouses, isLoading: loadingWarehouses } = useWarehouses();
+  const { data: taxCategories } = useTaxCategories();
+  const { data: taxTemplates, isLoading: loadingTaxes } = useTaxTemplates(formData.company);
+  
+  const saveMutation = useSaveSalesOrder();
+
   useEffect(() => {
     AsyncStorage.getItem('erp_user').then(setUser);
-    fetchData();
   }, []);
 
-  const fetchData = async () => {
-    try {
-      setLoading(true);
-      const [customerData, itemData, companyData, warehouseData, taxCatData] = await Promise.all([
-        customerService.getCustomers(),
-        sellingService.getItems(),
-        sellingService.getCompanies(),
-        sellingService.getWarehouses(),
-        sellingService.getTaxCategories()
-      ]);
-      setCustomers(customerData);
-      setItems(itemData);
-      setCompanies(companyData);
-      setWarehouses(warehouseData);
-      setTaxCategories(taxCatData);
-      
-      if (companyData && companyData.length > 0) {
-        const defaultCo = companyData[0];
-        setFormData(prev => ({ 
-          ...prev, 
-          company: defaultCo.name,
-          currency: defaultCo.default_currency || 'INR',
-          selling_price_list: 'Standard Selling'
-        }));
-        const templates = await sellingService.getSalesTaxesTemplates(defaultCo.name);
-        setTaxTemplates(templates);
-      }
-    } catch (err) {
-      setError('Failed to load required data');
-      console.error(err);
-    } finally {
-      setLoading(false);
+  useEffect(() => {
+    if (isEdit && orderDetail) {
+      setFormData({
+        ...orderDetail,
+        transaction_date: orderDetail.transaction_date,
+        delivery_date: orderDetail.delivery_date,
+      });
+    } else if (companies && companies.length > 0 && !formData.company) {
+      const defaultCo = companies[0];
+      setFormData(prev => ({ 
+        ...prev, 
+        company: defaultCo.name,
+        currency: defaultCo.default_currency || 'INR'
+      }));
     }
-  };
+  }, [isEdit, orderDetail, companies]);
 
-  const handleCompanyChange = async (companyName: string) => {
-    const co = companies.find(c => c.name === companyName);
-    setFormData({ 
-      ...formData, 
-      company: companyName,
-      currency: co?.default_currency || 'INR',
-      selling_price_list: 'Standard Selling',
-      taxes_and_charges: '',
-      taxes: []
-    });
-    const templates = await sellingService.getSalesTaxesTemplates(companyName);
-    setTaxTemplates(templates);
-  };
+  const handleChange = useCallback((name: string, value: any) => {
+    setFormData((prev: any) => ({ ...prev, [name]: value }));
+  }, []);
 
   const handleTaxTemplateChange = async (templateName: string) => {
     try {
       const detail = await sellingService.getSalesTaxesTemplateDetail(templateName);
-      setFormData({
-        ...formData,
+      setFormData(prev => ({
+        ...prev,
         taxes_and_charges: templateName,
         taxes: detail.taxes || []
-      });
+      }));
     } catch (err) {
       console.error("Failed to fetch tax template details", err);
     }
   };
 
   const addItem = () => {
-    setFormData({
-      ...formData,
-      items: [...formData.items, { item_code: '', qty: 1, rate: 0, price_list_rate: 0, discount_amount: 0, amount: 0, warehouse: formData.set_warehouse || '', item_tax_template: '' }]
-    });
+    setFormData(prev => ({
+      ...prev,
+      items: [...prev.items, { item_code: '', qty: 1, rate: 0, price_list_rate: 0, discount_amount: 0, amount: 0, warehouse: prev.set_warehouse || '', item_tax_template: '' }]
+    }));
   };
 
   const removeItem = (index: number) => {
     if (formData.items.length === 1) return;
     const newItems = [...formData.items];
     newItems.splice(index, 1);
-    setFormData({ ...formData, items: newItems });
+    setFormData(prev => ({ ...prev, items: newItems }));
   };
 
   const updateItem = async (index: number, field: string, value: any) => {
@@ -150,292 +116,279 @@ export function NewSalesOrder() {
     const item = { ...newItems[index], [field]: value };
     
     if (field === 'item_code') {
-      const selectedItem = items.find(i => i.name === value);
+      const selectedItem = items?.find((i: any) => i.name === value);
       if (selectedItem) {
-        // Fetch full details to get item_tax_template securely
         const details = await sellingService.getItemDetails(value);
-        console.log('Item Details for ' + value + ':', details);
-        
         const price = await sellingService.getItemPrice(value, formData.selling_price_list);
         
         item.price_list_rate = price || selectedItem.standard_rate || 0;
         item.rate = item.price_list_rate;
         item.discount_amount = 0;
         item.warehouse = formData.set_warehouse || item.warehouse;
-        
-        // Pick item tax template: priority to child table 'taxes', then main field
-        let taxTemplate = details?.item_tax_template || '';
-        if (details?.taxes && details.taxes.length > 0) {
-           taxTemplate = details.taxes[0].item_tax_template;
-           console.log('Using first tax template from child table:', taxTemplate);
-        }
-        item.item_tax_template = taxTemplate;
+        item.item_tax_template = details?.item_tax_template || (details?.taxes?.[0]?.item_tax_template || '');
       }
     }
     
-    const qty = item.qty || 0;
-    const price_list_rate = item.price_list_rate || 0;
+    const qty = parseFloat(item.qty) || 0;
+    const price_list_rate = parseFloat(item.price_list_rate) || 0;
     
     if (field === 'discount_amount') {
-      item.rate = qty > 0 ? (price_list_rate - (value / qty)) : price_list_rate;
+      const disc = parseFloat(value) || 0;
+      item.rate = qty > 0 ? (price_list_rate - (disc / qty)) : price_list_rate;
     } else if (field === 'rate') {
-      item.discount_amount = qty > 0 ? (price_list_rate - value) * qty : 0;
-    } else if (field === 'qty' || field === 'item_code') {
-      item.discount_amount = (price_list_rate - item.rate) * qty;
+      const rateVal = parseFloat(value) || 0;
+      item.discount_amount = qty > 0 ? (price_list_rate - rateVal) * qty : 0;
     }
     
     item.amount = qty * item.rate;
     newItems[index] = item;
-    setFormData({ ...formData, items: newItems });
+    setFormData(prev => ({ ...prev, items: newItems }));
   };
 
-  const handleCommonWarehouseChange = (warehouse: string) => {
-    setFormData({
-      ...formData,
-      set_warehouse: warehouse,
-      items: formData.items.map(item => ({ ...item, warehouse }))
-    });
-  };
-
-  const handleSave = async () => {
-    if (!formData.company) return setError('Please select a company');
-    if (!formData.customer) return setError('Please select a customer');
-    if (formData.items.some(i => !i.item_code)) return setError('Please select items');
-    if (formData.items.some(i => !i.warehouse)) return setError('Please select warehouses');
+  const handleSubmit = async () => {
+    if (!formData.company) return Alert.alert("Error", "Company is required");
+    if (!formData.customer) return Alert.alert("Error", "Customer is required");
+    if (formData.items.some((i: any) => !i.item_code)) return Alert.alert("Error", "All items must be selected");
 
     try {
-      setSaving(true);
-      setError(null);
-      
       const payload = {
         ...formData,
-        items: formData.items.map(item => ({
-          ...item,
-          delivery_date: formData.delivery_date
-        }))
+        items: formData.items.map((it: any) => ({ ...it, delivery_date: formData.delivery_date }))
       };
-
-      const newOrder = await sellingService.createSalesOrder(payload);
-      setSuccess('Sales Order created successfully');
-      setTimeout(() => {
-        navigation.replace('SalesOrderDetail', { orderId: newOrder.name });
-      }, 1500);
-    } catch (err: any) {
-      console.error(err);
-      let msg = 'Failed to create Sales Order';
-      if (err.response?.data?._server_messages) {
-        try {
-          const messages = JSON.parse(err.response.data._server_messages);
-          msg = messages.map((m: any) => JSON.parse(m).message).join(', ');
-        } catch (e) {
-          msg = err.response.data.message || msg;
-        }
-      }
-      setError(msg);
-    } finally {
-      setSaving(false);
+      const res = await saveMutation.mutateAsync({ data: payload, id: orderId });
+      Alert.alert("Success", `Sales Order ${isEdit ? 'updated' : 'created'} successfully`);
+      navigation.replace('SalesOrderDetail', { orderId: orderId || res.name });
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to save sales order");
     }
   };
 
-  if (loading) {
+  const sections = useMemo(() => [
+    { id: 'basic', title: 'Basic Info', icon: FileText, type: 'blue' },
+    { id: 'items', title: 'Items List', icon: Package, type: 'orange' },
+    { id: 'taxes', title: 'Taxes & Terms', icon: Tag, type: 'green' },
+    { id: 'save', title: 'Finish', icon: CheckCircle2, type: 'blue' },
+  ], []);
+
+  const customers = useMemo(() => {
+    return customerRes?.pages?.flatMap((p: any) => p) || [];
+  }, [customerRes]);
+
+  const renderSection = useCallback(({ item: section }: any) => {
+    const titleColor = colors[section.type === 'blue' ? 'blue_500' : (section.type === 'orange' ? 'orange_500' : 'green_500')];
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color="#2563eb" />
+      <View style={[detailStyles.sectionCard, detailStyles[`${section.type}Card` as keyof typeof detailStyles]]}>
+        <View style={detailStyles.cardTitleRow}>
+          <section.icon size={22} color={titleColor} strokeWidth={2.5} />
+          <Text style={[detailStyles.cardTitle, { color: titleColor }]}>{section.title}</Text>
+        </View>
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {section.id === 'basic' && (
+            <View>
+              <Selector 
+                label="Company" 
+                options={companies || []} 
+                value={formData.company} 
+                onChange={(v: any) => handleChange('company', v)} 
+                loading={loadingCompanies}
+                icon={Building2} 
+              />
+              <Selector 
+                label="Customer" 
+                options={customers} 
+                displayField="customer_name"
+                value={formData.customer} 
+                onChange={(v: any) => handleChange('customer', v)} 
+                icon={User} 
+              />
+              <FormInput 
+                label="Transaction Date" 
+                value={formData.transaction_date} 
+                onChangeText={(v: string) => handleChange('transaction_date', v)} 
+                icon={Calendar} 
+                placeholder="YYYY-MM-DD"
+              />
+              <FormInput 
+                label="Delivery Date" 
+                value={formData.delivery_date} 
+                onChangeText={(v: string) => handleChange('delivery_date', v)} 
+                icon={Truck} 
+                placeholder="YYYY-MM-DD"
+              />
+            </View>
+          )}
+
+          {section.id === 'items' && (
+            <View>
+               <Selector 
+                label="Common Warehouse" 
+                options={warehouses || []} 
+                value={formData.set_warehouse} 
+                onChange={(v: any) => {
+                  handleChange('set_warehouse', v);
+                  setFormData((prev: any) => ({
+                    ...prev,
+                    items: prev.items.map((it: any) => ({ ...it, warehouse: v }))
+                  }));
+                }} 
+                loading={loadingWarehouses}
+                icon={Warehouse} 
+              />
+
+              <TouchableOpacity 
+                onPress={addItem}
+                style={{ 
+                  flexDirection: 'row', 
+                  alignItems: 'center', 
+                  gap: 8, 
+                  backgroundColor: colors.blue_50, 
+                  padding: 12, 
+                  borderRadius: 12,
+                  marginVertical: 16,
+                  justifyContent: 'center'
+                }}
+              >
+                <Plus size={18} color={colors.primary} />
+                <Text style={{ color: colors.primary, fontWeight: 'bold' }}>Add Item</Text>
+              </TouchableOpacity>
+
+              {formData.items.map((item: any, idx: number) => (
+                <View key={idx} style={{ 
+                  backgroundColor: colors.background, 
+                  padding: 16, 
+                  borderRadius: 16, 
+                  marginBottom: 16,
+                  borderWidth: 1,
+                  borderColor: colors.border_light
+                }}>
+                  <View style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 }}>
+                    <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.text_tertiary }}>ITEM #{idx + 1}</Text>
+                    {formData.items.length > 1 && (
+                      <TouchableOpacity onPress={() => removeItem(idx)}>
+                        <Trash2 size={16} color={colors.error} />
+                      </TouchableOpacity>
+                    )}
+                  </View>
+
+                  <Selector 
+                    label="Select Item" 
+                    options={items || []} 
+                    displayField="item_name"
+                    value={item.item_code} 
+                    onChange={(v: any) => updateItem(idx, 'item_code', v)} 
+                    onSearch={setItemSearch}
+                    loading={loadingItems}
+                    icon={Package} 
+                  />
+
+                  <Selector 
+                    label="Warehouse" 
+                    options={warehouses || []} 
+                    value={item.warehouse} 
+                    onChange={(v: any) => updateItem(idx, 'warehouse', v)} 
+                    loading={loadingWarehouses}
+                    icon={Warehouse} 
+                  />
+
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <FormInput 
+                        label="Qty" 
+                        value={String(item.qty)} 
+                        onChangeText={(v: string) => updateItem(idx, 'qty', v)} 
+                        keyboardType="numeric"
+                      />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <FormInput 
+                        label="Rate" 
+                        value={String(item.rate)} 
+                        onChangeText={(v: string) => updateItem(idx, 'rate', v)} 
+                        keyboardType="numeric"
+                      />
+                    </View>
+                  </View>
+
+                  <View style={{ marginTop: 8, padding: 8, backgroundColor: colors.white, borderRadius: 8, alignItems: 'flex-end' }}>
+                    <Text style={{ fontSize: 10, color: colors.text_tertiary }}>AMOUNT</Text>
+                    <Text style={{ fontSize: 14, fontWeight: 'bold', color: colors.text_primary }}>{formData.currency} {item.amount.toFixed(2)}</Text>
+                  </View>
+                </View>
+              ))}
+            </View>
+          )}
+
+          {section.id === 'taxes' && (
+            <View>
+              <Selector 
+                label="Tax Category" 
+                options={taxCategories || []} 
+                value={formData.tax_category} 
+                onChange={(v: any) => handleChange('tax_category', v)} 
+                icon={Percent} 
+              />
+              <Selector 
+                label="Taxes and Charges" 
+                options={taxTemplates || []} 
+                value={formData.taxes_and_charges} 
+                onChange={handleTaxTemplateChange} 
+                loading={loadingTaxes}
+                icon={Percent} 
+              />
+              <Selector 
+                label="Price List" 
+                options={[{ name: 'Standard Selling' }, { name: 'Standard Buying' }]} 
+                value={formData.selling_price_list} 
+                onChange={(v: any) => handleChange('selling_price_list', v)} 
+                icon={ShoppingCart} 
+              />
+              
+              <View style={{ marginTop: spacing.lg, padding: 16, backgroundColor: colors.neutral_50, borderRadius: 16 }}>
+                <Text style={{ fontSize: 12, fontWeight: 'bold', color: colors.text_secondary, marginBottom: 8 }}>SUMMARY</Text>
+                {formData.items.map((it: any, i: number) => it.item_code ? (
+                  <View key={i} style={{ flexDirection: 'row', justifyContent: 'space-between', marginBottom: 4 }}>
+                    <Text style={{ fontSize: 12, color: colors.text_tertiary }}>{it.item_code} x {it.qty}</Text>
+                    <Text style={{ fontSize: 12, color: colors.text_primary }}>{formData.currency} {it.amount.toFixed(2)}</Text>
+                  </View>
+                ) : null)}
+              </View>
+            </View>
+          )}
+
+          {section.id === 'save' && (
+            <SaveSection 
+              isEdit={isEdit} 
+              isPending={saveMutation.isPending} 
+              handleSubmit={handleSubmit} 
+              title={isEdit ? "Update Order?" : "Save Order?"}
+              subtitle="This will save the sales order to the system."
+              label={isEdit ? "Update Order" : "Save Order"} 
+            />
+          )}
+        </ScrollView>
       </View>
     );
-  }
+  }, [formData, companies, customers, items, warehouses, taxCategories, taxTemplates, loadingCompanies, loadingItems, loadingWarehouses, loadingTaxes, handleChange, handleTaxTemplateChange, isEdit, saveMutation.isPending, handleSubmit]);
+
+  if (isEdit && loadingDetail) return <ModuleLayout title="Loading..." showBack><View style={detailStyles.loadingContainer}><ActivityIndicator size="large" color={colors.primary} /></View></ModuleLayout>;
 
   return (
-    <ModuleLayout title="New Order" user={user} showBack={true}>
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {/* Notifications */}
-        {success && (
-          <View style={styles.successBox}>
-            <CheckCircle size={18} color="#059669" />
-            <Text style={styles.successText}>{success}</Text>
-          </View>
-        )}
-        {error && (
-          <View style={styles.errorBox}>
-            <AlertCircle size={18} color="#dc2626" />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        {/* Header Details Card */}
-        <View style={styles.card}>
-          <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Company</Text>
-              <CompanySelector 
-                companies={companies}
-                value={formData.company}
-                onChange={handleCompanyChange}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Customer</Text>
-              <CustomerSelector 
-                customers={customers}
-                value={formData.customer}
-                onChange={(val) => setFormData({ ...formData, customer: val })}
-              />
-            </View>
-
-            <View style={styles.gridRow}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Transaction Date</Text>
-                <View style={styles.inputWrapper}>
-                  <Calendar style={styles.inputIcon} size={18} color="#9ca3af" />
-                  <TextInput 
-                    value={formData.transaction_date}
-                    onChangeText={(text) => setFormData({ ...formData, transaction_date: text })}
-                    style={styles.input}
-                  />
-                </View>
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Delivery Date</Text>
-                <View style={styles.inputWrapper}>
-                  <Calendar style={styles.inputIcon} size={18} color="#9ca3af" />
-                  <TextInput 
-                    value={formData.delivery_date}
-                    onChangeText={(text) => setFormData({ ...formData, delivery_date: text })}
-                    style={styles.input}
-                  />
-                </View>
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Tax Category</Text>
-              <TaxCategorySelector 
-                categories={taxCategories}
-                value={formData.tax_category}
-                onChange={(val) => setFormData({ ...formData, tax_category: val })}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Sales Taxes and Charges Template</Text>
-              <SalesTaxesTemplateSelector 
-                templates={taxTemplates}
-                value={formData.taxes_and_charges}
-                onChange={handleTaxTemplateChange}
-              />
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Common Warehouse</Text>
-              <WarehouseSelector 
-                warehouses={warehouses}
-                value={formData.set_warehouse}
-                onChange={handleCommonWarehouseChange}
-                placeholder="Set for all items"
-              />
-            </View>
-          </View>
+    <ModuleLayout title={isEdit ? `Edit Order` : "New Order"} showBack>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+        <View style={detailStyles.container}>
+          <FlatList 
+            data={sections} 
+            renderItem={renderSection} 
+            keyExtractor={(s) => s.id} 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            snapToAlignment="start" 
+            decelerationRate="fast" 
+            snapToInterval={SCREEN_WIDTH * 0.9 + spacing.xs * 2} 
+            contentContainerStyle={detailStyles.horizontalList} 
+          />
         </View>
-
-        {/* Items Card */}
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTag}>Items</Text>
-            <TouchableOpacity onPress={addItem} style={styles.addItemBtn}>
-              <Plus size={16} color="#2563eb" />
-            </TouchableOpacity>
-          </View>
-
-          <View style={styles.itemsList}>
-            {formData.items.map((item, idx) => (
-              <View key={idx} style={styles.itemCard}>
-                {formData.items.length > 1 && (
-                  <TouchableOpacity onPress={() => removeItem(idx)} style={styles.removeBtn}>
-                    <Trash2 size={14} color="#ef4444" />
-                  </TouchableOpacity>
-                )}
-                
-                <View style={styles.inputGroup}>
-                  <Text style={styles.label}>Item</Text>
-                  <ItemSelector 
-                    items={items}
-                    value={item.item_code}
-                    onChange={(val) => updateItem(idx, 'item_code', val)}
-                  />
-                </View>
-
-                <View style={styles.gridRow}>
-                  <View style={[styles.inputGroup, { flex: 2 }]}>
-                    <Text style={styles.label}>Warehouse</Text>
-                    <WarehouseSelector 
-                      warehouses={warehouses}
-                      value={item.warehouse}
-                      onChange={(val) => updateItem(idx, 'warehouse', val)}
-                    />
-                  </View>
-                  <View style={[styles.inputGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Qty</Text>
-                    <TextInput 
-                      keyboardType="numeric"
-                      value={String(item.qty)}
-                      onChangeText={(text) => updateItem(idx, 'qty', parseFloat(text) || 0)}
-                      style={styles.subInput}
-                    />
-                  </View>
-                </View>
-
-                {item.item_tax_template ? (
-                  <View style={styles.taxInfo}>
-                    <Text style={styles.taxInfoText}>Tax Template: {item.item_tax_template}</Text>
-                  </View>
-                ) : null}
-
-                <View style={styles.gridRow}>
-                  <View style={[styles.inputGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Price List Rate</Text>
-                    <TextInput editable={false} value={String(item.price_list_rate)} style={[styles.subInput, styles.inputDisabled]} />
-                  </View>
-                  <View style={[styles.inputGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Discount Amt</Text>
-                    <TextInput 
-                      keyboardType="numeric"
-                      value={String(item.discount_amount)}
-                      onChangeText={(text) => updateItem(idx, 'discount_amount', parseFloat(text) || 0)}
-                      style={styles.subInput}
-                    />
-                  </View>
-                </View>
-
-                <View style={styles.gridRow}>
-                  <View style={[styles.inputGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Rate</Text>
-                    <TextInput 
-                      keyboardType="numeric"
-                      value={String(item.rate)}
-                      onChangeText={(text) => updateItem(idx, 'rate', parseFloat(text) || 0)}
-                      style={styles.subInput}
-                    />
-                  </View>
-                  <View style={[styles.inputGroup, { flex: 1 }]}>
-                    <Text style={styles.label}>Amount</Text>
-                    <TextInput editable={false} value={String(item.amount)} style={[styles.subInput, styles.amountInput]} />
-                  </View>
-                </View>
-              </View>
-            ))}
-          </View>
-        </View>
-
-        <View style={{ height: 100 }} />
-      </ScrollView>
-
-      <View style={styles.footer}>
-        <TouchableOpacity onPress={handleSave} disabled={saving} style={styles.submitBtn}>
-          {saving ? <ActivityIndicator color="#fff" /> : <Save size={18} color="#fff" />}
-          <Text style={styles.submitBtnText}>Create Sales Order</Text>
-        </TouchableOpacity>
-      </View>
+      </KeyboardAvoidingView>
     </ModuleLayout>
   );
 }
