@@ -1,211 +1,163 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, TouchableOpacity, StyleSheet, ScrollView, ActivityIndicator, TextInput } from 'react-native';
-import { Plus, RefreshCw, AlertCircle, ShoppingBag, Search, X, Filter } from 'lucide-react-native';
-import { sellingService } from '@sellingServices/salesOrderService';
-import { SalesOrder } from '../types';
-import { formatCurrency, formatDate } from '@core/utils/formatters';
-import { ModuleLayout } from '@components/ModuleLayout';
+import { View, Text, TouchableOpacity, ActivityIndicator, FlatList, RefreshControl } from 'react-native';
+import { Plus, FileText } from 'lucide-react-native';
+import { formatCurrency, formatDate } from '../../../../core/utils/formatters';
+import { ModuleLayout } from '../../../../core/components/ModuleLayout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SellingStackParamList } from '@navigation/types';
+import { SellingStackParamList } from '../../../../navigation/types';
+import { useSalesOrders } from '../../hooks/sellingQueries';
+import { FilterHeader } from '../../../../core/components/FilterHeader';
+import { colors, spacing } from '../../../../core/theme';
+import { useDebounce } from '../../../../core/utils/debounce';
 import styles from './styles';
 
 export function SalesOrderList() {
-  const [orders, setOrders] = useState<SalesOrder[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const debouncedSearch = useDebounce(searchQuery, 500);
+  const [statusFilter, setStatusFilter] = useState('All');
   
   const navigation = useNavigation<NativeStackNavigationProp<SellingStackParamList>>();
 
   useEffect(() => {
     AsyncStorage.getItem('erp_user').then(setUser);
-    fetchOrders();
   }, []);
 
-  const fetchOrders = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await sellingService.getSalesOrders();
-      setOrders(data || []);
-    } catch (err: any) {
-      console.error("Fetch Orders Error:", err);
-      const msg = err.response?.status === 403 
-        ? "Session expired or insufficient permissions. Try logging out and in again."
-        : (err.response?.data?.message || err.message || "Failed to fetch sales orders");
-      setError(msg);
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const {
+    data,
+    isLoading,
+    isRefetching,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage
+  } = useSalesOrders(debouncedSearch, statusFilter);
 
-  const filteredOrders = useMemo(() => {
-    return orders.filter(order => {
-      const matchesSearch = 
-        order.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (order.customer_name || order.customer || '').toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchesStatus = !statusFilter || order.status === statusFilter;
-      
-      return matchesSearch && matchesStatus;
-    });
-  }, [orders, searchQuery, statusFilter]);
+  const orders = useMemo(() => {
+    return data?.pages?.flatMap(page => page) || [];
+  }, [data]);
 
-  const getStatusStyles = (status: string) => {
-    if (!status) return { text: '#2563eb', bg: '#eff6ff' };
+  const handleRefresh = useCallback(() => {
+    refetch();
+  }, [refetch]);
+
+  const handleAdd = useCallback(() => {
+    navigation.navigate('NewSalesOrder');
+  }, [navigation]);
+
+  const getStatusStyles = useCallback((status: string) => {
+    if (!status) return { text: colors.primary, bg: colors.blue_50 };
     switch (status.toLowerCase()) {
-      case 'completed': return { text: '#16a34a', bg: '#f0fdf4' };
-      case 'to deliver and bill': return { text: '#2563eb', bg: '#eff6ff' };
-      case 'draft': return { text: '#4b5563', bg: '#f3f4f6' };
-      case 'on hold': return { text: '#ea580c', bg: '#fff7ed' };
-      case 'cancelled': return { text: '#dc2626', bg: '#fef2f2' };
-      default: return { text: '#2563eb', bg: '#eff6ff' };
+      case 'completed': return { text: colors.success, bg: colors.green_100 };
+      case 'to deliver and bill': return { text: colors.primary, bg: colors.blue_100 };
+      case 'to deliver': return { text: colors.teal_600, bg: colors.teal_50 };
+      case 'to bill': return { text: colors.orange_600, bg: colors.orange_50 };
+      case 'draft': return { text: colors.neutral_600, bg: colors.neutral_100 };
+      case 'cancelled': return { text: colors.error, bg: colors.red_100 };
+      case 'closed': return { text: colors.neutral_400, bg: colors.neutral_100 };
+      default: return { text: colors.primary, bg: colors.blue_50 };
     }
-  };
+  }, []);
 
-  const statusOptions = ['Draft', 'To Deliver and Bill', 'Completed', 'Cancelled', 'On Hold'];
-
-  return (
-    <ModuleLayout 
-      title="Sales Orders" 
-      user={user}
-      showBack={true}
-    >
-      <View style={styles.container}>
-        {/* Search & Action Bar */}
-        <View style={styles.actionBar}>
-          <View style={styles.searchContainer}>
-            <Search size={18} color="#9ca3af" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search by ID or Customer"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholderTextColor="#9ca3af"
-            />
-            {searchQuery !== '' && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <X size={18} color="#9ca3af" />
-              </TouchableOpacity>
-            )}
+  const renderItem = useCallback(({ item }: any) => {
+    const statusStyle = getStatusStyles(item.status);
+    return (
+      <TouchableOpacity 
+        onPress={() => navigation.navigate('SalesOrderDetail', { orderId: item.name })}
+        style={styles.orderCard}
+        activeOpacity={0.7}
+      >
+        <View style={styles.cardTop}>
+          <View style={styles.orderMeta}>
+            <Text style={styles.orderId}>{item.name}</Text>
+            <Text style={styles.customerName} numberOfLines={1}>{item.customer_name}</Text>
           </View>
-          <View style={styles.actionButtons}>
-            <TouchableOpacity 
-              onPress={() => setShowFilters(!showFilters)}
-              style={[styles.iconButton, statusFilter && styles.activeFilterBtn]}
-            >
-              <Filter size={18} color={statusFilter ? '#2563eb' : '#6b7280'} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={fetchOrders}
-              disabled={loading}
-              style={styles.iconButton}
-            >
-              <RefreshCw size={18} color="#6b7280" />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={() => navigation.navigate('NewSalesOrder')}
-              style={styles.addButton}
-            >
-              <Plus size={18} color="#ffffff" />
-            </TouchableOpacity>
+          <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
+            <Text style={[styles.statusText, { color: statusStyle.text }]}>
+              {item.status}
+            </Text>
           </View>
         </View>
+        <View style={styles.cardBottom}>
+          <View>
+            <Text style={styles.label}>Date</Text>
+            <Text style={styles.valueText}>{formatDate(item.transaction_date)}</Text>
+          </View>
+          <View style={styles.rightAlign}>
+            <Text style={styles.label}>Amount</Text>
+            <Text style={styles.amountText}>{formatCurrency(item.grand_total, item.currency)}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [navigation, getStatusStyles]);
 
-        {/* Status Filters */}
-        {showFilters && (
-          <View style={styles.filterBar}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-              <TouchableOpacity 
-                onPress={() => setStatusFilter(null)}
-                style={[styles.filterChip, !statusFilter && styles.activeFilterChip]}
-              >
-                <Text style={[styles.filterChipText, !statusFilter && styles.activeFilterChipText]}>All</Text>
-              </TouchableOpacity>
-              {statusOptions.map(status => (
-                <TouchableOpacity 
-                  key={status}
-                  onPress={() => setStatusFilter(status)}
-                  style={[styles.filterChip, statusFilter === status && styles.activeFilterChip]}
-                >
-                  <Text style={[styles.filterChipText, statusFilter === status && styles.activeFilterChipText]}>{status}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
+  const filterOptions = useMemo(() => [
+    { label: 'All', value: 'All' },
+    { label: 'Draft', value: 'Draft' },
+    { label: 'To Deliver', value: 'To Deliver' },
+    { label: 'To Bill', value: 'To Bill' },
+    { label: 'To Deliver and Bill', value: 'To Deliver and Bill' },
+    { label: 'Completed', value: 'Completed' },
+    { label: 'Cancelled', value: 'Cancelled' },
+  ], []);
 
-        {error ? (
-          <View style={styles.errorContainer}>
-            <View style={styles.errorIconContainer}>
-              <AlertCircle size={24} color="#dc2626" />
-            </View>
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity onPress={fetchOrders}>
-              <Text style={styles.retryText}>Try Again</Text>
-            </TouchableOpacity>
-          </View>
-        ) : loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#2563eb" />
-          </View>
-        ) : filteredOrders.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <View style={styles.emptyIconContainer}>
-              <ShoppingBag size={32} color="#d1d5db" />
-            </View>
-            <Text style={styles.emptyTitle}>No Orders Found</Text>
-            <Text style={styles.emptySubtitle}>
-              {searchQuery || statusFilter ? 'Try adjusting your filters.' : 'There are no sales orders to display.'}
-            </Text>
-            <TouchableOpacity onPress={() => {setSearchQuery(''); setStatusFilter(null); fetchOrders();}}>
-              <Text style={styles.refreshText}>Reset List</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-            {filteredOrders.map((order) => {
-              const statusStyle = getStatusStyles(order.status);
-              return (
-                <TouchableOpacity 
-                  key={order.name}
-                  onPress={() => navigation.navigate('SalesOrderDetail', { orderId: order.name })}
-                  style={styles.orderCard}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.cardTop}>
-                    <View style={styles.orderMeta}>
-                      <Text style={styles.orderId}>{order.name}</Text>
-                      <Text style={styles.customerName} numberOfLines={1}>{order.customer_name || order.customer}</Text>
-                    </View>
-                    <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-                      <Text style={[styles.statusText, { color: statusStyle.text }]}>
-                        {order.status}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.cardBottom}>
-                    <View>
-                      <Text style={styles.label}>Date</Text>
-                      <Text style={styles.valueText}>{formatDate(order.transaction_date)}</Text>
-                    </View>
-                    <View style={styles.rightAlign}>
-                      <Text style={styles.label}>Amount</Text>
-                      <Text style={styles.amountText}>{formatCurrency(order.grand_total, order.currency)}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
+  const renderFooter = useCallback(() => {
+    if (!isFetchingNextPage) return <View style={{ height: spacing.xxl }} />;
+    return (
+      <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>
+        <ActivityIndicator color={colors.primary} />
       </View>
+    );
+  }, [isFetchingNextPage]);
+
+  return (
+    <ModuleLayout title="Sales Orders" user={user} showBack={true}>
+      <FilterHeader 
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onRefresh={handleRefresh}
+        onAdd={handleAdd}
+        placeholder="Search orders..."
+        filters={filterOptions}
+        activeFilter={statusFilter}
+        onFilterChange={setStatusFilter}
+      />
+      
+      {isLoading && !isRefetching ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      ) : (
+        <FlatList
+          data={orders}
+          keyExtractor={(item) => item.name}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          onEndReached={() => {
+            if (hasNextPage && !isFetchingNextPage) {
+              fetchNextPage();
+            }
+          }}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconContainer}>
+                <FileText size={32} color={colors.neutral_300} />
+              </View>
+              <Text style={styles.emptyTitle}>No Sales Orders Found</Text>
+              <Text style={styles.emptySubtitle}>Adjust your filters or create a new order.</Text>
+            </View>
+          }
+          refreshControl={
+            <RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} tintColor={colors.primary} />
+          }
+        />
+      )}
     </ModuleLayout>
   );
 }
-
