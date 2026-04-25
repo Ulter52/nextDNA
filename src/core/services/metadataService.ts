@@ -21,6 +21,16 @@ export const metadataService = {
     });
   },
 
+  getCustomerGroups: (search?: string) => {
+    const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
+    return fetchResource('Customer Group', { 
+      fields: '["name"]', 
+      filters,
+      limit_page_length: 100,
+      order_by: 'name asc'
+    });
+  },
+
   getUOMs: (search?: string) => {
     const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
     return fetchResource('UOM', { 
@@ -57,6 +67,16 @@ export const metadataService = {
   getSupplierGroups: (search?: string) => {
     const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
     return fetchResource('Supplier Group', {
+      fields: '["name"]',
+      filters,
+      limit_page_length: 100,
+      order_by: 'name asc'
+    });
+  },
+
+  getTerritories: (search?: string) => {
+    const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
+    return fetchResource('Territory', {
       fields: '["name"]',
       filters,
       limit_page_length: 100,
@@ -235,18 +255,13 @@ export const metadataService = {
     });
   },
 
-  /**
-   * Smart lookup for barcodes that could be Item codes, Item Barcodes, or Serial Numbers.
-   */
   lookupBarcode: async (barcode: string) => {
-    // 1. Try lookup as Item Code directly (name)
     let itemRes = await fetchResource('Item', {
       fields: '["name", "item_name", "stock_uom", "has_serial_no", "valuation_rate"]',
       filters: JSON.stringify([["name", "=", barcode]]),
       limit_page_length: 1
     });
 
-    // 2. If not found by name, try lookup via Item Barcode DocType
     if (!itemRes?.data?.length) {
       try {
         const barcodeRes = await fetchResource('Item Barcode', {
@@ -272,7 +287,6 @@ export const metadataService = {
       return { type: 'item', item: itemRes.data[0] };
     }
 
-    // 3. Try lookup as Serial No
     const snRes = await fetchResource('Serial No', {
       fields: '["name", "item_code"]',
       filters: JSON.stringify([["name", "=", barcode]]),

@@ -1,4 +1,5 @@
 import apiClient from '../../../core/api/client';
+import { fetchResource, createResource, updateResource } from '../../../core/api/frappeApiHelpers';
 import { Customer } from '../types';
 
 export const customerService = {
@@ -8,7 +9,6 @@ export const customerService = {
       frappeFilters.push(["customer_name", "like", `%${search}%`]);
     }
     
-    // Merge additional filters (e.g., customer_group)
     Object.keys(filters).forEach(key => {
       if (filters[key] && filters[key] !== 'All') {
         frappeFilters.push([key, "=", filters[key]]);
@@ -17,7 +17,7 @@ export const customerService = {
 
     const response = await apiClient.get('/api/resource/Customer', {
       params: {
-        fields: '["name", "customer_name", "customer_group", "territory", "customer_type", "image"]',
+        fields: '["name", "customer_name", "customer_group", "territory", "customer_type", "image", "customer_primary_address", "customer_primary_contact"]',
         filters: frappeFilters.length > 0 ? JSON.stringify(frappeFilters) : undefined,
         limit_start: start,
         limit_page_length: limit,
@@ -30,6 +30,22 @@ export const customerService = {
   async getCustomerDetails(name: string): Promise<any> {
     const response = await apiClient.get(`/api/resource/Customer/${name}`);
     return response.data.data;
+  },
+
+  async getAddressDetail(id: string): Promise<any> {
+    return fetchResource(`Address/${id}`);
+  },
+
+  async updateAddress(id: string, data: any): Promise<any> {
+    return updateResource('Address', id, data);
+  },
+
+  async getContactDetail(id: string): Promise<any> {
+    return fetchResource(`Contact/${id}`);
+  },
+
+  async updateContact(id: string, data: any): Promise<any> {
+    return updateResource('Contact', id, data);
   },
 
   async createCustomer(data: any): Promise<any> {

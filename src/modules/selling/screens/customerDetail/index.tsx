@@ -1,328 +1,187 @@
-import React, { useState, useEffect } from 'react';
+import React, { useCallback, useMemo, useState, useEffect } from 'react';
+import { View, Text, FlatList, ActivityIndicator, RefreshControl, ScrollView, Dimensions, TouchableOpacity, Image, DeviceEventEmitter } from 'react-native';
 import { 
-  View, 
-  Text, 
-  TouchableOpacity, 
-  ScrollView, 
-  TextInput, 
-  ActivityIndicator, 
-  StyleSheet,
-  Alert
-} from 'react-native';
-import { 
-  Save, 
-  User, 
-  Globe, 
-  Layers, 
-  CheckCircle, 
-  AlertCircle,
-  RefreshCcw,
-  Edit2,
-  X,
-  Mail,
-  Phone,
-  Briefcase
+  User, MapPin, Phone, Mail, Globe, 
+  Edit, Briefcase, Tag, CheckCircle2, Hash
 } from 'lucide-react-native';
-import { customerService } from '@sellingServices/customerService';
-import { ModuleLayout } from '@components/ModuleLayout';
-import AsyncStorage from '@react-native-async-storage/async-storage';
+import { ModuleLayout } from '../../../../core/components/ModuleLayout';
+import { styles } from '../../../stock/screens/itemDetail/styles';
+import { colors, spacing } from '../../../../core/theme';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { colors, spacing, borderRadius, typography, shadow } from '@theme';
+import { useCustomerDetail } from '../../hooks/customerQueries';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+const VerticalInfoRow = React.memo(({ label, value, icon: Icon }: { label: string, value: any, icon?: any }) => (
+  <View style={[styles.infoRow, { flexDirection: 'column', alignItems: 'flex-start', borderBottomWidth: 1, borderBottomColor: colors.border_light, paddingVertical: spacing.md }]}>
+    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
+      {Icon && <Icon size={12} color={colors.text_tertiary} />}
+      <Text style={[styles.infoLabel, { textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5, fontWeight: '700' }]}>{label}</Text>
+    </View>
+    <Text style={[styles.infoValue, { textAlign: 'left', fontSize: 14, color: colors.text_primary, fontWeight: '600' }]}>
+      {String(value ?? '') || '—'}
+    </Text>
+  </View>
+));
 
 export function CustomerDetail() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { customerId } = route.params;
-
-  const [customer, setCustomer] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [saving, setSaving] = useState(false);
-  const [isEditing, setIsEditing] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const [success, setSuccess] = useState<string | null>(null);
-  const [user, setUser] = useState<string | null>(null);
   
-  const [formData, setFormData] = useState({
-    customer_name: '',
-    customer_type: '',
-    customer_group: '',
-    territory: '',
-    email_id: '',
-    mobile_no: ''
-  });
+  const { data: customer, isLoading, isRefetching, refetch } = useCustomerDetail(customerId);
 
   useEffect(() => {
-    AsyncStorage.getItem('erp_user').then(setUser);
-    fetchCustomer();
-  }, [customerId]);
+    const sub = DeviceEventEmitter.addListener('customers_updated', refetch);
+    return () => sub.remove();
+  }, [refetch]);
 
-  const fetchCustomer = async () => {
-    try {
-      setLoading(true);
-      setError(null);
-      const data = await customerService.getCustomerDetails(customerId);
-      setCustomer(data);
-      setFormData({
-        customer_name: data.customer_name || '',
-        customer_type: data.customer_type || '',
-        customer_group: data.customer_group || '',
-        territory: data.territory || '',
-        email_id: data.email_id || '',
-        mobile_no: data.mobile_no || ''
-      });
-    } catch (err: any) {
-      setError(err.message || 'Failed to load customer details');
-    } finally {
-      setLoading(false);
-    }
-  };
+  const handleEdit = useCallback(() => {
+    navigation.navigate('NewCustomer', { customerId });
+  }, [navigation, customerId]);
 
-  const handleSave = async () => {
-    try {
-      setSaving(true);
-      setError(null);
-      const updated = await customerService.updateCustomer(customerId, formData);
-      setCustomer(updated);
-      setIsEditing(false);
-      setSuccess('Customer updated successfully');
-      setTimeout(() => setSuccess(null), 3000);
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to update customer');
-    } finally {
-      setSaving(false);
-    }
-  };
+  const sections = useMemo(() => [
+    { id: 'basic', title: 'Basic Info', icon: User, type: 'blue' },
+    { id: 'contact', title: 'Primary Contact', icon: Phone, type: 'orange' },
+    { id: 'address', title: 'Primary Address', icon: MapPin, type: 'green' },
+  ], []);
 
-  if (loading && !customer) {
+  const renderSection = useCallback(({ item: section }: { item: any }) => {
+    if (!customer) return null;
+    
+    const contact = customer.contact_data;
+    const address = customer.address_data;
+
+    const SectionIcon = section.icon;
+    const cardStyle = [
+      styles.sectionCard,
+      section.type === 'blue' && styles.blueCard,
+      section.type === 'orange' && styles.orangeCard,
+      section.type === 'green' && styles.greenCard,
+    ];
+
+    const titleColor = colors[section.type === 'blue' ? 'blue_500' : (section.type === 'orange' ? 'orange_500' : 'green_500')];
+
     return (
-      <View style={styles.loadingContainer}>
-        <ActivityIndicator size="large" color={colors.primary} />
+      <View style={cardStyle}>
+        <View style={[styles.cardTitleRow, { justifyContent: 'space-between' }]}>
+          <View style={{ flexDirection: 'row', alignItems: 'center', gap: spacing.sm }}>
+            <SectionIcon size={22} color={titleColor} strokeWidth={2.5} />
+            <Text style={[styles.cardTitle, { color: titleColor }]}>{section.title}</Text>
+          </View>
+          {section.id === 'basic' && (
+            <TouchableOpacity onPress={handleEdit} activeOpacity={0.7}>
+              <Edit size={20} color={colors.primary} />
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
+          {section.id === 'basic' && (
+            <View>
+              <View style={{ alignItems: 'center', marginBottom: spacing.lg }}>
+                {customer.image ? (
+                  <Image 
+                    source={{ uri: customer.image.startsWith('http') ? customer.image : `https://erp.nextdna.in${customer.image}` }} 
+                    style={{ width: 80, height: 80, borderRadius: 40 }} 
+                  />
+                ) : (
+                  <View style={{ width: 80, height: 80, borderRadius: 40, backgroundColor: colors.blue_50, justifyContent: 'center', alignItems: 'center' }}>
+                    <User size={40} color={colors.primary} />
+                  </View>
+                )}
+                <Text style={{ fontSize: 18, fontWeight: 'bold', color: colors.text_primary, marginTop: spacing.sm }}>{customer.customer_name}</Text>
+                <Text style={{ fontSize: 12, color: colors.text_tertiary }}>{customer.name}</Text>
+              </View>
+              
+              <VerticalInfoRow label="Customer Name" value={customer.customer_name} icon={User} />
+              <VerticalInfoRow label="Customer Group" value={customer.customer_group} icon={Tag} />
+              <VerticalInfoRow label="Customer Type" value={customer.customer_type} icon={Briefcase} />
+              <VerticalInfoRow label="Territory" value={customer.territory} icon={Globe} />
+            </View>
+          )}
+
+          {section.id === 'contact' && (
+            <View>
+              <VerticalInfoRow 
+                label="First Name" 
+                value={contact?.first_name} 
+                icon={User} 
+              />
+              <VerticalInfoRow 
+                label="Last Name" 
+                value={contact?.last_name} 
+                icon={User} 
+              />
+              <VerticalInfoRow 
+                label="Email ID" 
+                value={contact?.email_id || customer.email_id} 
+                icon={Mail} 
+              />
+              <VerticalInfoRow 
+                label="Mobile Number" 
+                value={contact?.mobile_no || customer.mobile_no} 
+                icon={Phone} 
+              />
+            </View>
+          )}
+
+          {section.id === 'address' && (
+            <View>
+              <View style={{ flexDirection: 'row', gap: 12, marginBottom: spacing.md }}>
+                {!!address?.is_primary_address && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.blue_50, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                    <CheckCircle2 size={10} color={colors.blue_600} />
+                    <Text style={{ fontSize: 10, color: colors.blue_600, fontWeight: 'bold' }}>BILLING</Text>
+                  </View>
+                )}
+                {!!address?.is_shipping_address && (
+                  <View style={{ flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: colors.green_50, paddingHorizontal: 8, paddingVertical: 4, borderRadius: 4 }}>
+                    <CheckCircle2 size={10} color={colors.green_600} />
+                    <Text style={{ fontSize: 10, color: colors.green_600, fontWeight: 'bold' }}>SHIPPING</Text>
+                  </View>
+                )}
+              </View>
+              
+              <VerticalInfoRow label="Address Line 1" value={address?.address_line1} icon={MapPin} />
+              <VerticalInfoRow label="Address Line 2" value={address?.address_line2} icon={MapPin} />
+              <VerticalInfoRow label="City/Town" value={address?.city} icon={Globe} />
+              <VerticalInfoRow label="State/Province" value={address?.state} icon={MapPin} />
+              <VerticalInfoRow label="Country" value={address?.country} icon={Globe} />
+              <VerticalInfoRow label="Postal Code" value={address?.pincode} icon={Hash} />
+            </View>
+          )}
+        </ScrollView>
       </View>
+    );
+  }, [customer, handleEdit]);
+
+  if (isLoading && !customer) {
+    return (
+      <ModuleLayout title={customerId} showBack>
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
+        </View>
+      </ModuleLayout>
     );
   }
 
   return (
-    <ModuleLayout 
-      title={customer?.customer_name || "Customer Detail"} 
-      user={user} 
-      showBack={true}
-      headerRight={
-        <TouchableOpacity onPress={fetchCustomer} style={{ padding: 8 }}>
-          <RefreshCcw size={20} color={colors.neutral_500} />
-        </TouchableOpacity>
-      }
-    >
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
-        {success && (
-          <View style={styles.successBox}>
-            <CheckCircle size={18} color={colors.success} />
-            <Text style={styles.successText}>{success}</Text>
-          </View>
-        )}
-        {error && (
-          <View style={styles.errorBox}>
-            <AlertCircle size={18} color={colors.error} />
-            <Text style={styles.errorText}>{error}</Text>
-          </View>
-        )}
-
-        <View style={styles.card}>
-          <View style={styles.cardHeader}>
-            <Text style={styles.cardTag}>Basic Information</Text>
-            {!isEditing ? (
-              <TouchableOpacity onPress={() => setIsEditing(true)} style={styles.editBtn}>
-                <Edit2 size={16} color={colors.primary} />
-              </TouchableOpacity>
-            ) : (
-              <TouchableOpacity onPress={() => setIsEditing(false)} style={styles.cancelBtn}>
-                <X size={18} color={colors.neutral_500} />
-              </TouchableOpacity>
-            )}
-          </View>
-
-          <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Customer Name</Text>
-              <View style={[styles.inputWrapper, !isEditing && styles.inputWrapperDisabled]}>
-                <User style={styles.inputIcon} size={18} color={colors.neutral_400} />
-                <TextInput 
-                  editable={isEditing}
-                  value={formData.customer_name}
-                  onChangeText={(text) => setFormData({ ...formData, customer_name: text })}
-                  style={styles.input}
-                />
-              </View>
-            </View>
-
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Type</Text>
-              <View style={[styles.inputWrapper, !isEditing && styles.inputWrapperDisabled]}>
-                <Briefcase style={styles.inputIcon} size={18} color={colors.neutral_400} />
-                <TextInput 
-                  editable={isEditing}
-                  value={formData.customer_type}
-                  onChangeText={(text) => setFormData({ ...formData, customer_type: text })}
-                  style={styles.input}
-                />
-              </View>
-            </View>
-
-            <View style={styles.gridRow}>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Group</Text>
-                <View style={[styles.inputWrapper, !isEditing && styles.inputWrapperDisabled]}>
-                  <Layers style={styles.inputIcon} size={18} color={colors.neutral_400} />
-                  <TextInput 
-                    editable={isEditing}
-                    value={formData.customer_group}
-                    onChangeText={(text) => setFormData({ ...formData, customer_group: text })}
-                    style={styles.input}
-                  />
-                </View>
-              </View>
-              <View style={[styles.inputGroup, { flex: 1 }]}>
-                <Text style={styles.label}>Territory</Text>
-                <View style={[styles.inputWrapper, !isEditing && styles.inputWrapperDisabled]}>
-                  <Globe style={styles.inputIcon} size={18} color={colors.neutral_400} />
-                  <TextInput 
-                    editable={isEditing}
-                    value={formData.territory}
-                    onChangeText={(text) => setFormData({ ...formData, territory: text })}
-                    style={styles.input}
-                  />
-                </View>
-              </View>
-            </View>
-          </View>
-        </View>
-
-        <View style={styles.card}>
-          <Text style={styles.cardTag}>Contact Details</Text>
-          <View style={styles.form}>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Email ID</Text>
-              <View style={[styles.inputWrapper, !isEditing && styles.inputWrapperDisabled]}>
-                <Mail style={styles.inputIcon} size={18} color={colors.neutral_400} />
-                <TextInput 
-                  editable={isEditing}
-                  value={formData.email_id}
-                  onChangeText={(text) => setFormData({ ...formData, email_id: text })}
-                  style={styles.input}
-                  keyboardType="email-address"
-                />
-              </View>
-            </View>
-            <View style={styles.inputGroup}>
-              <Text style={styles.label}>Mobile No</Text>
-              <View style={[styles.inputWrapper, !isEditing && styles.inputWrapperDisabled]}>
-                <Phone style={styles.inputIcon} size={18} color={colors.neutral_400} />
-                <TextInput 
-                  editable={isEditing}
-                  value={formData.mobile_no}
-                  onChangeText={(text) => setFormData({ ...formData, mobile_no: text })}
-                  style={styles.input}
-                  keyboardType="phone-pad"
-                />
-              </View>
-            </View>
-          </View>
-        </View>
-        
-        <View style={{ height: 120 }} />
-      </ScrollView>
-
-      {isEditing && (
-        <View style={styles.footer}>
-          <TouchableOpacity onPress={handleSave} disabled={saving} style={styles.submitBtn}>
-            {saving ? <ActivityIndicator color="#fff" /> : <Save size={18} color="#fff" />}
-            <Text style={styles.submitBtnText}>Save Changes</Text>
-          </TouchableOpacity>
-        </View>
-      )}
+    <ModuleLayout title={customer?.customer_name || customerId} showBack>
+      <View style={styles.container}>
+        <FlatList
+          data={sections}
+          renderItem={renderSection}
+          keyExtractor={(s) => s.id}
+          horizontal
+          showsHorizontalScrollIndicator={false}
+          snapToAlignment="start"
+          decelerationRate="fast"
+          snapToInterval={SCREEN_WIDTH * 0.9 + spacing.xs * 2}
+          contentContainerStyle={styles.horizontalList}
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={refetch} tintColor={colors.primary} />}
+        />
+      </View>
     </ModuleLayout>
   );
 }
-
-const styles = StyleSheet.create({
-  loadingContainer: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: colors.white },
-  scrollContent: { padding: 24, gap: 24 },
-  card: { 
-    backgroundColor: colors.card_bg, 
-    borderRadius: borderRadius.xxl, 
-    padding: spacing.lg, 
-    borderWidth: 1, 
-    borderColor: colors.border_light,
-    ...shadow.light,
-  },
-  cardHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.lg },
-  cardTag: { 
-    fontSize: typography.sizes.xs, 
-    fontFamily: typography.fonts.black, 
-    color: colors.neutral_400, 
-    textTransform: 'uppercase', 
-    letterSpacing: 2,
-  },
-  editBtn: { padding: 8, backgroundColor: colors.blue_50, borderRadius: borderRadius.md },
-  cancelBtn: { padding: 8, backgroundColor: colors.neutral_100, borderRadius: borderRadius.md },
-  form: { gap: 16 },
-  inputGroup: { gap: 6 },
-  label: { 
-    fontSize: typography.sizes.xs, 
-    fontFamily: typography.fonts.bold, 
-    color: colors.neutral_400, 
-    textTransform: 'uppercase', 
-    letterSpacing: 1, 
-    marginLeft: 4 
-  },
-  inputWrapper: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    backgroundColor: colors.neutral_100, 
-    borderRadius: borderRadius.lg, 
-    paddingHorizontal: spacing.md 
-  },
-  inputWrapperDisabled: { opacity: 0.6 },
-  inputIcon: { marginRight: spacing.sm },
-  input: { 
-    flex: 1, 
-    paddingVertical: 14, 
-    fontSize: typography.sizes.md, 
-    fontFamily: typography.fonts.bold, 
-    color: colors.text_primary 
-  },
-  gridRow: { flexDirection: 'row', gap: 12 },
-  footer: { position: 'absolute', bottom: 24, left: 24, right: 24 },
-  submitBtn: { 
-    backgroundColor: colors.primary, 
-    paddingVertical: 16, 
-    borderRadius: borderRadius.xl, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    gap: 8, 
-    ...shadow.medium,
-  },
-  submitBtnText: { color: colors.white, fontSize: typography.sizes.md, fontFamily: typography.fonts.bold },
-  successBox: { 
-    backgroundColor: colors.success_light, 
-    padding: 16, 
-    borderRadius: borderRadius.lg, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 12, 
-    borderWidth: 1, 
-    borderColor: '#d1fae5' 
-  },
-  successText: { color: colors.success, fontSize: typography.sizes.sm, fontFamily: typography.fonts.bold },
-  errorBox: { 
-    backgroundColor: colors.error_light, 
-    padding: 16, 
-    borderRadius: borderRadius.lg, 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    gap: 12, 
-    borderWidth: 1, 
-    borderColor: '#fee2e2' 
-  },
-  errorText: { color: colors.error, fontSize: typography.sizes.sm, fontFamily: typography.fonts.bold },
-});
