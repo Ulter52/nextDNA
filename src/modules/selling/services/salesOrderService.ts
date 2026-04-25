@@ -12,12 +12,22 @@ export const sellingService = {
     return response.data.data;
   },
 
-  async getItems(): Promise<any[]> {
+  async getItems(search?: string): Promise<any[]> {
+    const filters: any[] = [["disabled", "=", 0], ["is_sales_item", "=", 1]];
+    
+    if (search) {
+      // Search in both code and name
+      filters.push(["name", "like", `%${search}%`]);
+      // Note: Frappe's simpler filtering doesn't easily support OR without complex JSON.
+      // Usually, searching by 'name' (Item Code) covers most exact/ID lookups like '29066'.
+    }
+    
     const response = await apiClient.get('/api/resource/Item', {
       params: {
         fields: '["name", "item_name", "item_code", "stock_uom", "standard_rate"]',
-        filters: '[["disabled", "=", 0], ["is_sales_item", "=", 1]]',
+        filters: JSON.stringify(filters),
         limit_page_length: 100,
+        order_by: 'name asc'
       },
     });
     return response.data.data;

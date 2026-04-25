@@ -2,12 +2,22 @@ import apiClient from '../../../core/api/client';
 import { Quotation } from '../types';
 
 export const quotationService = {
-  async getQuotations(): Promise<Quotation[]> {
+  async getQuotations(search?: string, status?: string, start: number = 0, limit: number = 20): Promise<Quotation[]> {
+    const filters: any[] = [];
+    if (search) {
+      filters.push(["name", "like", `%${search}%`]);
+    }
+    if (status && status !== 'All') {
+      filters.push(["status", "=", status]);
+    }
+
     const response = await apiClient.get('/api/resource/Quotation', {
       params: {
         fields: '["name", "party_name", "customer_name", "transaction_date", "grand_total", "status", "currency"]',
+        filters: filters.length > 0 ? JSON.stringify(filters) : undefined,
+        limit_start: start,
+        limit_page_length: limit,
         order_by: 'transaction_date desc',
-        limit_page_length: 20,
       },
     });
     return response.data.data;

@@ -1,194 +1,160 @@
 import React, { useEffect, useState, useCallback, useMemo } from 'react';
-import { View, Text, TextInput, TouchableOpacity, ScrollView, ActivityIndicator } from 'react-native';
-import { Search, Plus, RefreshCw, AlertCircle, FileText, X, Filter, ChevronRight } from 'lucide-react-native';
-import { quotationService } from '@sellingServices/quotationService';
-import { Quotation } from '../types';
-import { formatCurrency, formatDate } from '@utils/formatters';
-import { ModuleLayout } from '@components/ModuleLayout';
+import { View, Text, TouchableOpacity, ActivityIndicator, FlatList, RefreshControl } from 'react-native';
+import { FileText } from 'lucide-react-native';
+import { formatCurrency, formatDate } from '../../../../core/utils/formatters';
+import { ModuleLayout } from '../../../../core/components/ModuleLayout';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useNavigation } from '@react-navigation/native';
 import { NativeStackNavigationProp } from '@react-navigation/native-stack';
-import { SellingStackParamList } from '@navigation/types';
+import { SellingStackParamList } from '../../../../navigation/types';
+import { useQuotations } from '../../hooks/quotationQueries';
+import { FilterHeader } from '../../../../core/components/FilterHeader';
+import { colors, spacing } from '../../../../core/theme';
+import { useDebounce } from '../../../../core/utils/debounce';
 import styles from '../salesOrderList/styles';
 
 export function QuotationList() {
-  const [quotes, setQuotes] = useState<Quotation[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
   const [user, setUser] = useState<string | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
-  const [statusFilter, setStatusFilter] = useState<string | null>(null);
-  const [showFilters, setShowFilters] = useState(false);
+  const debouncedSearch = useDebounce(searchQuery, 500);
+  const [statusFilter, setStatusFilter] = useState('All');
   
   const navigation = useNavigation<NativeStackNavigationProp<SellingStackParamList>>();
 
   useEffect(() => {
     AsyncStorage.getItem('erp_user').then(setUser);
-    fetchQuotes();
   }, []);
 
-  const fetchQuotes = useCallback(async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const data = await quotationService.getQuotations();
-      setQuotes(data || []);
-    } catch (err: any) {
-      console.error("Fetch Quotations Error:", err);
-      setError(err.message || "Failed to fetch quotations");
-    } finally {
-      setLoading(false);
-    }
-  }, []);
+  const {
+    data,
+    isLoading,
+    isRefetching,
+    refetch,
+    hasNextPage,
+    fetchNextPage,
+    isFetchingNextPage
+  } = useQuotations(debouncedSearch, statusFilter);
 
-  const filteredQuotes = useMemo(() => {
-    return quotes.filter(quote => {
-      const matchesSearch = 
-        quote.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (quote.customer_name || quote.party_name || '').toLowerCase().includes(searchQuery.toLowerCase());
-      
-      const matchesStatus = !statusFilter || quote.status === statusFilter;
-      
-      return matchesSearch && matchesStatus;
-    });
-  }, [quotes, searchQuery, statusFilter]);
+  const quotations = useMemo(() => {
+    return data?.pages?.flatMap(page => page) || [];
+  }, [data]);
 
-  const getStatusStyles = (status: string) => {
-    if (!status) return { text: '#2563eb', bg: '#eff6ff' };
+  const handleRefresh = useCallback(() => {
+    refetch();
+  }, [refetch]);
+
+  const handleAdd = useCallback(() => {
+    navigation.navigate('NewQuotation');
+  }, [navigation]);
+
+  const getStatusStyles = useCallback((status: string) => {
+    if (!status) return { text: colors.primary, bg: colors.blue_50 };
     switch (status.toLowerCase()) {
-      case 'ordered': return { text: '#16a34a', bg: '#f0fdf4' };
-      case 'open': return { text: '#2563eb', bg: '#eff6ff' };
-      case 'draft': return { text: '#4b5563', bg: '#f3f4f6' };
-      case 'lost': return { text: '#dc2626', bg: '#fef2f2' };
-      case 'expired': return { text: '#ea580c', bg: '#fff7ed' };
-      default: return { text: '#2563eb', bg: '#eff6ff' };
+      case 'ordered': return { text: colors.success, bg: colors.green_100 };
+      case 'open': return { text: colors.primary, bg: colors.blue_100 };
+      case 'draft': return { text: colors.neutral_600, bg: colors.neutral_100 };
+      case 'lost': return { text: colors.error, bg: colors.red_100 };
+      case 'expired': return { text: colors.warning, bg: colors.orange_100 };
+      default: return { text: colors.primary, bg: colors.blue_50 };
     }
-  };
+  }, []);
 
-  const statusOptions = ['Draft', 'Open', 'Ordered', 'Lost', 'Expired'];
+  const renderItem = useCallback(({ item }: any) => {
+    const statusStyle = getStatusStyles(item.status);
+    return (
+      <TouchableOpacity 
+        onPress={() => navigation.navigate('QuotationDetail', { quotationId: item.name })}
+        style={styles.orderCard}
+        activeOpacity={0.7}
+      >
+        <View style={styles.cardTop}>
+          <View style={styles.orderMeta}>
+            <Text style={styles.orderId}>{item.name}</Text>
+            <Text style={styles.customerName} numberOfLines={1}>{item.customer_name || item.party_name}</Text>
+          </View>
+          <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
+            <Text style={[styles.statusText, { color: statusStyle.text }]}>
+              {item.status}
+            </Text>
+          </View>
+        </View>
+        <View style={styles.cardBottom}>
+          <View>
+            <Text style={styles.label}>Date</Text>
+            <Text style={styles.valueText}>{formatDate(item.transaction_date)}</Text>
+          </View>
+          <View style={styles.rightAlign}>
+            <Text style={styles.label}>Amount</Text>
+            <Text style={styles.amountText}>{formatCurrency(item.grand_total, item.currency)}</Text>
+          </View>
+        </View>
+      </TouchableOpacity>
+    );
+  }, [navigation, getStatusStyles]);
+
+  const filterOptions = useMemo(() => [
+    { label: 'All', value: 'All' },
+    { label: 'Draft', value: 'Draft' },
+    { label: 'Open', value: 'Open' },
+    { label: 'Ordered', value: 'Ordered' },
+    { label: 'Lost', value: 'Lost' },
+    { label: 'Expired', value: 'Expired' },
+  ], []);
+
+  const renderFooter = useCallback(() => {
+    if (!isFetchingNextPage) return <View style={{ height: spacing.xxl }} />;
+    return (
+      <View style={{ paddingVertical: spacing.lg, alignItems: 'center' }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  }, [isFetchingNextPage]);
 
   return (
     <ModuleLayout title="Quotations" user={user} showBack={true}>
-      <View style={styles.container}>
-        <View style={styles.actionBar}>
-          <View style={styles.searchContainer}>
-            <Search size={18} color="#9ca3af" style={styles.searchIcon} />
-            <TextInput
-              style={styles.searchInput}
-              placeholder="Search by ID or Customer"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              placeholderTextColor="#9ca3af"
-            />
-            {searchQuery !== '' && (
-              <TouchableOpacity onPress={() => setSearchQuery('')}>
-                <X size={18} color="#9ca3af" />
-              </TouchableOpacity>
-            )}
-          </View>
-          <View style={styles.actionButtons}>
-            <TouchableOpacity 
-              onPress={() => setShowFilters(!showFilters)}
-              style={[styles.iconButton, statusFilter && styles.activeFilterBtn]}
-            >
-              <Filter size={18} color={statusFilter ? '#2563eb' : '#6b7280'} />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={fetchQuotes}
-              disabled={loading}
-              style={styles.iconButton}
-            >
-              <RefreshCw size={18} color="#6b7280" />
-            </TouchableOpacity>
-            <TouchableOpacity 
-              onPress={() => navigation.navigate('NewQuotation')}
-              style={styles.addButton}
-            >
-              <Plus size={18} color="#ffffff" />
-            </TouchableOpacity>
-          </View>
+      <FilterHeader 
+        searchQuery={searchQuery}
+        onSearchChange={setSearchQuery}
+        onRefresh={handleRefresh}
+        onAdd={handleAdd}
+        placeholder="Search quotations..."
+        filters={filterOptions}
+        activeFilter={statusFilter}
+        onFilterChange={setStatusFilter}
+      />
+      
+      {isLoading && !isRefetching ? (
+        <View style={styles.loadingContainer}>
+          <ActivityIndicator size="large" color={colors.primary} />
         </View>
-
-        {showFilters && (
-          <View style={styles.filterBar}>
-            <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.filterScroll}>
-              <TouchableOpacity 
-                onPress={() => setStatusFilter(null)}
-                style={[styles.filterChip, !statusFilter && styles.activeFilterChip]}
-              >
-                <Text style={[styles.filterChipText, !statusFilter && styles.activeFilterChipText]}>All</Text>
-              </TouchableOpacity>
-              {statusOptions.map(status => (
-                <TouchableOpacity 
-                  key={status}
-                  onPress={() => setStatusFilter(status)}
-                  style={[styles.filterChip, statusFilter === status && styles.activeFilterChip]}
-                >
-                  <Text style={[styles.filterChipText, statusFilter === status && styles.activeFilterChipText]}>{status}</Text>
-                </TouchableOpacity>
-              ))}
-            </ScrollView>
-          </View>
-        )}
-
-        {error ? (
-          <View style={styles.errorContainer}>
-            <AlertCircle size={24} color="#dc2626" />
-            <Text style={styles.errorText}>{error}</Text>
-            <TouchableOpacity onPress={fetchQuotes}>
-              <Text style={styles.retryText}>Try Again</Text>
-            </TouchableOpacity>
-          </View>
-        ) : loading ? (
-          <View style={styles.loadingContainer}>
-            <ActivityIndicator size="large" color="#2563eb" />
-          </View>
-        ) : filteredQuotes.length === 0 ? (
-          <View style={styles.emptyContainer}>
-            <FileText size={32} color="#d1d5db" />
-            <Text style={styles.emptyTitle}>No Quotations Found</Text>
-            <TouchableOpacity onPress={() => {setSearchQuery(''); setStatusFilter(null); fetchQuotes();}}>
-              <Text style={styles.refreshText}>Reset List</Text>
-            </TouchableOpacity>
-          </View>
-        ) : (
-          <ScrollView contentContainerStyle={styles.listContent} showsVerticalScrollIndicator={false}>
-            {filteredQuotes.map((quote) => {
-              const statusStyle = getStatusStyles(quote.status);
-              return (
-                <TouchableOpacity 
-                  key={quote.name}
-                  onPress={() => navigation.navigate('QuotationDetail', { quotationId: quote.name })}
-                  style={styles.orderCard}
-                  activeOpacity={0.7}
-                >
-                  <View style={styles.cardTop}>
-                    <View style={styles.orderMeta}>
-                      <Text style={styles.orderId}>{quote.name}</Text>
-                      <Text style={styles.customerName} numberOfLines={1}>{quote.customer_name || quote.party_name}</Text>
-                    </View>
-                    <View style={[styles.statusBadge, { backgroundColor: statusStyle.bg }]}>
-                      <Text style={[styles.statusText, { color: statusStyle.text }]}>
-                        {quote.status}
-                      </Text>
-                    </View>
-                  </View>
-                  <View style={styles.cardBottom}>
-                    <View>
-                      <Text style={styles.label}>Date</Text>
-                      <Text style={styles.valueText}>{formatDate(quote.transaction_date)}</Text>
-                    </View>
-                    <View style={styles.rightAlign}>
-                      <Text style={styles.label}>Amount</Text>
-                      <Text style={styles.amountText}>{formatCurrency(quote.grand_total, quote.currency)}</Text>
-                    </View>
-                  </View>
-                </TouchableOpacity>
-              );
-            })}
-          </ScrollView>
-        )}
-      </View>
+      ) : (
+        <FlatList
+          data={quotations}
+          keyExtractor={(item) => item.name}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          onEndReached={() => {
+            if (hasNextPage && !isFetchingNextPage) {
+              fetchNextPage();
+            }
+          }}
+          onEndReachedThreshold={0.5}
+          ListFooterComponent={renderFooter}
+          ListEmptyComponent={
+            <View style={styles.emptyContainer}>
+              <View style={styles.emptyIconContainer}>
+                <FileText size={32} color={colors.neutral_300} />
+              </View>
+              <Text style={styles.emptyTitle}>No Quotations Found</Text>
+              <Text style={styles.emptySubtitle}>Adjust your filters or create a new quotation.</Text>
+            </View>
+          }
+          refreshControl={
+            <RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} tintColor={colors.primary} />
+          }
+        />
+      )}
     </ModuleLayout>
   );
 }
