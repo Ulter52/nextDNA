@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.4.0](https://github.com/Ulter52/nextDNA/compare/NextDNA-v1.3.0...NextDNA-v1.4.0) (2026-04-26)
+
+
+### Features
+
+* Quotation Query,caching and memoization ([e26bf94](https://github.com/Ulter52/nextDNA/commit/e26bf945cbd58668bfd54f595baea209e25209c2))
+* Sales Invoice-Query,caching, and memo.. ([a453362](https://github.com/Ulter52/nextDNA/commit/a453362ae284f3596d4033b8af90c4a5a3cf4276))
+* Sales Order- Quering, Caching and memoization ([6e45422](https://github.com/Ulter52/nextDNA/commit/6e4542235fe25d5e1fd51a0deffd701cc6da5f9a))
+
+
+### Bug Fixes
+
+* Quotation list, detail and edit comply with query, caching.. ([b836121](https://github.com/Ulter52/nextDNA/commit/b83612145a33b886dafb3d176e9ca4ec19509d77))
+* Sales Invoice list, detail and Edit comply with Query ([8aeef29](https://github.com/Ulter52/nextDNA/commit/8aeef29c3df4bc6bdce5c995e9964c03efc95e7f))
+* Sales order detail and edit comply with query,caching, memo... ([89f0f2f](https://github.com/Ulter52/nextDNA/commit/89f0f2ff0fc1ba23f74d7ce929a5ab6a618ad70a))
+
 ## [1.3.0](https://github.com/Ulter52/nextDNA/compare/NextDNA-v1.2.0...NextDNA-v1.3.0) (2026-04-25)
 
 
