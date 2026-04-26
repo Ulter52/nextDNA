@@ -1,12 +1,22 @@
 import apiClient from '../../../core/api/client';
 
 export const salesInvoiceService = {
-  async getSalesInvoices(): Promise<any[]> {
+  async getSalesInvoices(search?: string, status?: string, start: number = 0, limit: number = 20): Promise<any[]> {
+    const filters: any[] = [];
+    if (search) {
+      filters.push(["name", "like", `%${search}%`]);
+    }
+    if (status && status !== 'All') {
+      filters.push(["status", "=", status]);
+    }
+
     const response = await apiClient.get('/api/resource/Sales Invoice', {
       params: {
         fields: '["name", "customer", "customer_name", "posting_date", "grand_total", "status", "currency"]',
+        filters: filters.length > 0 ? JSON.stringify(filters) : undefined,
+        limit_start: start,
+        limit_page_length: limit,
         order_by: 'posting_date desc',
-        limit_page_length: 20,
       },
     });
     return response.data.data;
