@@ -11,7 +11,6 @@ import {
   ActivityIndicator,
   Platform,
   KeyboardAvoidingView,
-  StatusBar
 } from 'react-native';
 import { SafeAreaView } from 'react-native-safe-area-context';
 import { ChevronDown, Search, X, LucideIcon } from 'lucide-react-native';
@@ -24,10 +23,12 @@ interface SelectorProps {
   value: string;
   onChange: (value: string) => void;
   onSearch?: (query: string) => void;
+  onEndReached?: () => void;
   placeholder?: string;
   label?: string;
   icon: LucideIcon;
   loading?: boolean;
+  loadingNextPage?: boolean;
   disabled?: boolean;
   searchPlaceholder?: string;
   displayField?: string;
@@ -39,10 +40,12 @@ export function Selector({
   value,
   onChange,
   onSearch,
+  onEndReached,
   placeholder = "Select...",
   label,
   icon: Icon,
   loading = false,
+  loadingNextPage = false,
   disabled = false,
   searchPlaceholder = "Search...",
   displayField = "name",
@@ -203,6 +206,15 @@ export function Selector({
                 contentContainerStyle={styles.listContent}
                 keyboardShouldPersistTaps="handled"
                 renderItem={renderItem}
+                onEndReached={onEndReached}
+                onEndReachedThreshold={0.5}
+                ListFooterComponent={
+                  loadingNextPage ? (
+                    <View style={{ paddingVertical: spacing.md }}>
+                      <ActivityIndicator size="small" color={colors.primary} />
+                    </View>
+                  ) : null
+                }
                 ListEmptyComponent={
                   <View style={styles.emptyBox}>
                     {loading ? (

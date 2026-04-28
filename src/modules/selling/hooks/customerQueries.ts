@@ -15,11 +15,16 @@ export const useCustomers = (search?: string, filters: any = {}) => {
   return useInfiniteQuery({
     queryKey: customerKeys.list({ search, ...filters }),
     queryFn: async ({ pageParam = 0 }) => {
-      const data = await customerService.getCustomers(search, pageParam as number, 20, filters);
-      return data || [];
+      try {
+        const data = await customerService.getCustomers(search, pageParam as number, 20, filters);
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
     },
     getNextPageParam: (lastPage, allPages) => {
-      return lastPage && lastPage.length === 20 ? allPages.length * 20 : undefined;
+      if (!lastPage || !Array.isArray(lastPage) || lastPage.length < 20) return undefined;
+      return allPages.length * 20;
     },
     initialPageParam: 0,
     staleTime: 5 * 60 * 1000,

@@ -1,6 +1,7 @@
 import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { sellingService } from '../services/salesOrderService';
 import { companyService } from '../../../core/services/companyService';
+import { metadataService } from '../../../core/services/metadataService';
 
 export const sellingKeys = {
   all: ['selling'] as const,
@@ -13,10 +14,18 @@ export const sellingKeys = {
 export const useSalesOrders = (search?: string, status?: string) => {
   return useInfiniteQuery({
     queryKey: sellingKeys.orders({ search, status }),
-    queryFn: ({ pageParam = 0 }) => 
-      sellingService.getSalesOrders(search, status, pageParam as number),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const data = await sellingService.getSalesOrders(search, status, pageParam as number);
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    },
     getNextPageParam: (lastPage, allPages) => {
-      return lastPage.length === 20 ? allPages.length * 20 : undefined;
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 20) return undefined;
+      return (allPages?.length || 0) * 20;
     },
     initialPageParam: 0,
     staleTime: 5 * 60 * 1000,
@@ -41,9 +50,22 @@ export const useCompanies = () => {
 };
 
 export const useSellingItems = (search?: string) => {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: sellingKeys.metadata('items', search),
-    queryFn: () => sellingService.getItems(search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const data = await sellingService.getItems(search, pageParam as number);
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 100) return undefined;
+      return (allPages?.length || 0) * 100;
+    },
+    initialPageParam: 0,
     staleTime: 5 * 60 * 1000,
   });
 };
@@ -70,6 +92,48 @@ export const useTaxTemplates = (company?: string) => {
     queryFn: () => sellingService.getSalesTaxesTemplates(company),
     enabled: !!company,
     staleTime: 24 * 60 * 60 * 1000,
+  });
+};
+
+export const useProjects = (search?: string) => {
+  return useInfiniteQuery({
+    queryKey: sellingKeys.metadata('projects', search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const res = await metadataService.getProjects(search);
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 100) return undefined;
+      return (allPages?.length || 0) * 100;
+    },
+    initialPageParam: 0,
+    staleTime: 5 * 60 * 1000,
+  });
+};
+
+export const useCostCenters = (search?: string) => {
+  return useInfiniteQuery({
+    queryKey: sellingKeys.metadata('cost-centers', search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const res = await metadataService.getCostCenters(search);
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 100) return undefined;
+      return (allPages?.length || 0) * 100;
+    },
+    initialPageParam: 0,
+    staleTime: 5 * 60 * 1000,
   });
 };
 
