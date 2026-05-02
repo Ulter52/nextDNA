@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { buyingApi } from '../services/buyingApi';
 import { metadataService } from '../../../core/services/metadataService';
 
@@ -6,14 +6,26 @@ export const poKeys = {
   all: ['purchaseOrders'] as const,
   list: (params: any) => [...poKeys.all, 'list', params] as const,
   detail: (id: string) => [...poKeys.all, 'detail', id] as const,
-  suppliers: (search?: string) => ['metadata', 'suppliers', search] as const,
-  items: (search?: string) => ['metadata', 'items', search] as const,
+  metadata: (type: string, search?: string) => [...poKeys.all, 'metadata', type, { search }] as const,
 };
 
 export const usePurchaseOrders = (params: { search?: string; status?: string }) => {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: poKeys.list(params),
-    queryFn: () => buyingApi.getPurchaseOrders(params.search, params.status),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const data = await buyingApi.getPurchaseOrders(params.search, params.status, pageParam as number);
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 20) return undefined;
+      return (allPages?.length || 0) * 20;
+    },
+    initialPageParam: 0,
     staleTime: 2 * 60 * 1000,
   });
 };
@@ -28,17 +40,43 @@ export const usePurchaseOrderDetail = (id: string) => {
 };
 
 export const usePOSuppliers = (search?: string) => {
-  return useQuery({
-    queryKey: poKeys.suppliers(search),
-    queryFn: () => metadataService.getSuppliers(search).then(r => r?.data || []),
+  return useInfiniteQuery({
+    queryKey: poKeys.metadata('suppliers', search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const res = await metadataService.getSuppliers(search);
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 100) return undefined;
+      return (allPages?.length || 0) * 100;
+    },
+    initialPageParam: 0,
     staleTime: 5 * 60 * 1000,
   });
 };
 
 export const usePOItems = (search?: string) => {
-  return useQuery({
-    queryKey: poKeys.items(search),
-    queryFn: () => metadataService.getItems(search).then(r => r?.data || []),
+  return useInfiniteQuery({
+    queryKey: poKeys.metadata('items', search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const res = await metadataService.getItems(search);
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 50) return undefined; // metadataService.getItems limit is 50
+      return (allPages?.length || 0) * 50;
+    },
+    initialPageParam: 0,
     staleTime: 5 * 60 * 1000,
   });
 };

@@ -1,31 +1,100 @@
 import React, { useState, useEffect, useCallback, useMemo } from 'react';
-import { View, FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Dimensions, ScrollView, Text } from 'react-native';
-import { FileText, Package, CreditCard, CheckCircle2 } from 'lucide-react-native';
+import { View, FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Dimensions, ScrollView, Text, TouchableOpacity, StyleSheet } from 'react-native';
+import { User, Calendar, FileText, CheckCircle2, Package, Tag, Building2, Plus, Trash2, ShoppingCart, Percent, Truck, Warehouse, Briefcase, LayoutGrid, Ruler, Hash } from 'lucide-react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
+import { useForm, Controller, useFieldArray } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
-import { ModuleLayout } from '@core/components/ModuleLayout';
-import { BarcodeScanner } from '@core/components/BarcodeScanner';
-import { SerialNoModal } from '@core/components/serialNoModal';
-import { useDebounce } from '@core/utils/debounce';
-import { colors, spacing } from '@core/theme';
+import { ModuleLayout } from '../../../../core/components/ModuleLayout';
+import { colors, spacing } from '../../../../core/theme';
 import { styles as detailStyles } from '../itemDetail/styles';
 
 import { 
   usePurchaseReceiptDetail, 
   useSavePurchaseReceipt 
 } from '../../hooks/purchaseReceiptQueries';
-import { useItems } from '../../hooks/itemQueries';
+import { useSellingItems, useWarehouses, useProjects, useCostCenters, useTaxCategories, useTaxTemplates } from '../../../selling/hooks/sellingQueries';
+import { usePOSuppliers } from '../../../buying/hooks/purchaseOrderQueries';
 import { stockApi } from '../../services/stockApi';
-import { metadataService } from '@core/services/metadataService';
-import { companyService } from '@core/services/companyService';
+import { companyService } from '../../../../core/services/companyService';
+import { metadataService } from '../../../../core/services/metadataService';
 
-import { HeaderSection } from '../../components/HeaderSection';
-import { ItemsSection } from '../../components/ItemsSection';
-import { TotalsSection } from '../../components/TotalsSection';
-import { SaveSection } from '../../components/SaveSection';
-import { formStyles } from './styles';
+import { FormInput } from '../../../../core/components/FormInput';
+import { Selector } from '../../../../core/components/Selector';
+import { SaveSection } from '../../../../core/components/SaveSection';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// 1. Zod Schema
+const prItemSchema = z.object({
+  item_code: z.string().min(1, 'Required'),
+  qty: z.coerce.number().positive('Qty > 0'),
+  rate: z.coerce.number().min(0),
+  warehouse: z.string().optional(),
+  amount: z.number().optional(),
+});
+
+const prSchema = z.object({
+  company: z.string().min(1, 'Required'),
+  supplier: z.string().min(1, 'Required'),
+  posting_date: z.string(),
+  set_warehouse: z.string().optional(),
+  tax_category: z.string().optional(),
+  taxes_and_charges: z.string().optional(),
+  currency: z.string().default('INR'),
+  project: z.string().optional(),
+  cost_center: z.string().optional(),
+  items: z.array(prItemSchema).min(1, 'At least one item'),
+});
+
+type PRFormValues = z.infer<typeof prSchema>;
+
+/**
+ * Sub-components to keep Main Screen clean
+ */
+const DateSection = ({ watch, setValue }: { watch: any, setValue: any }) => {
+  const [showPicker, setShowPicker] = useState(false);
+
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    setShowPicker(false);
+    if (selectedDate) {
+      try {
+        const dateString = selectedDate.toISOString().split('T')[0];
+        setValue('posting_date', dateString);
+      } catch (e) {
+        console.error("Date conversion error", e);
+      }
+    }
+  };
+
+  const postingDate = watch('posting_date');
+
+  const getPickerDate = () => {
+    if (!postingDate) return new Date();
+    const d = new Date(postingDate);
+    return isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  return (
+    <>
+      <TouchableOpacity onPress={() => setShowPicker(true)} activeOpacity={0.7}>
+        <View pointerEvents="none">
+          <FormInput label="Date" value={postingDate} editable={false} icon={Calendar} />
+        </View>
+      </TouchableOpacity>
+      {showPicker && (
+        <DateTimePicker 
+          value={getPickerDate()} 
+          mode="date" 
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'} 
+          onChange={onDateChange} 
+        />
+      )}
+    </>
+  );
+};
 
 export function PurchaseReceiptEdit() {
   const route = useRoute<any>();
@@ -33,322 +102,116 @@ export function PurchaseReceiptEdit() {
   const { receiptId } = route.params || {};
   const isEdit = !!receiptId;
 
-  // --- Search & Metadata State ---
   const [itemSearch, setItemSearch] = useState('');
   const [supplierSearch, setSupplierSearch] = useState('');
-  const [company, setCompany] = useState('');
-  const [suppliers, setSuppliers] = useState<any[]>([]);
-  const [extraMeta, setExtraMeta] = useState<any>({ 
-    projects: [], 
-    costCenters: [], 
-    taxCategories: [], 
-    taxTemplates: [],
-    warehouses: [] 
-  });
+  const [projectSearch, setProjectSearch] = useState('');
+  const [costCenterSearch, setCostCenterSearch] = useState('');
   
-  const [isScannerVisible, setIsScannerVisible] = useState(false);
-  const [isSerialModalVisible, setIsSerialModalVisible] = useState(false);
-  const [activeItemIndex, setActiveItemIndex] = useState<number | null>(null);
-  const [activeScanTarget, setActiveScanTarget] = useState<{ type: 'item' | 'serial', index?: number }>({ type: 'item' });
-
-  const debouncedItemSearch = useDebounce(itemSearch);
-  const debouncedSupplierSearch = useDebounce(supplierSearch);
-
-  const [formData, setFormData] = useState<any>({
-    supplier: '',
-    posting_date: new Date().toISOString().split('T')[0],
-    posting_time: new Date().toTimeString().split(' ')[0],
-    company: '',
-    items: [],
-    taxes: [],
-    net_total: 0,
-    total: 0,
-    grand_total: 0
+  const { control, handleSubmit, watch, setValue, reset } = useForm<PRFormValues>({
+    resolver: zodResolver(prSchema),
+    defaultValues: {
+      company: '', supplier: '',
+      posting_date: new Date().toISOString().split('T')[0],
+      items: [{ item_code: '', qty: 1, rate: 0 }],
+      currency: 'INR'
+    }
   });
 
-  // --- Queries ---
-  const { data: receiptDetail, isLoading: loadingDetail } = usePurchaseReceiptDetail(receiptId);
-  const { data: items, isLoading: loadingItems } = useItems(debouncedItemSearch);
+  const { fields, append, remove } = useFieldArray({ control, name: "items" });
+  const watchCompany = watch('company');
+  const watchItems = watch('items');
+  const watchCurrency = watch('currency');
+
+  // Queries
+  const { data: receiptDetail, isLoading: loadingDetail } = usePurchaseReceiptDetail(receiptId || '');
+  
+  const { 
+    data: supplierRes, 
+    fetchNextPage: fetchNextSuppliers, 
+    hasNextPage: hasNextSuppliers, 
+    isFetchingNextPage: isFetchingSuppliers 
+  } = usePOSuppliers(supplierSearch);
+  
+  const { 
+    data: itemRes, 
+    fetchNextPage: fetchNextItems, 
+    hasNextPage: hasNextItems, 
+    isFetchingNextPage: isFetchingItems 
+  } = useSellingItems(itemSearch);
+
+  const {
+    data: projectRes,
+    fetchNextPage: fetchNextProjects,
+    hasNextPage: hasNextProjects,
+    isFetchingNextPage: isFetchingProjects
+  } = useProjects(projectSearch);
+
+  const {
+    data: costCenterRes,
+    fetchNextPage: fetchNextCostCenters,
+    hasNextPage: hasNextCostCenters,
+    isFetchingNextPage: isFetchingCostCenters
+  } = useCostCenters(costCenterSearch);
+  
+  const { data: warehouses, isLoading: loadingWh } = useWarehouses(watchCompany);
+  const { data: taxCategories } = useTaxCategories();
+  const { data: taxTemplates } = useTaxTemplates(watchCompany);
+  
   const saveMutation = useSavePurchaseReceipt();
 
-  // --- Initial Load ---
-  useEffect(() => {
-    companyService.getSelectedCompany().then(c => {
-      const compName = c?.name || '';
-      setCompany(compName);
-      if (!isEdit) setFormData(prev => ({ ...prev, company: compName }));
-      
-      // Load initial warehouses for the company
-      metadataService.getWarehouses(compName).then(res => {
-        setExtraMeta(prev => ({ ...prev, warehouses: res.data || [] }));
-      });
-    });
-    
-    Promise.all([
-      metadataService.getProjects(),
-      metadataService.getCostCenters(),
-      metadataService.getTaxCategories(),
-      metadataService.getPurchaseTaxesTemplates()
-    ]).then(([projects, costCenters, taxCats, taxTemps]) => {
-      setExtraMeta(prev => ({
-        ...prev,
-        projects: projects?.data || [],
-        costCenters: costCenters?.data || [],
-        taxCategories: taxCats?.data || [],
-        taxTemplates: taxTemps?.data || []
-      }));
-    });
-  }, [isEdit]);
-
-  // --- Debounced Metadata Sync ---
-  useEffect(() => {
-    metadataService.getSuppliers(debouncedSupplierSearch).then(res => setSuppliers(res.data || []));
-  }, [debouncedSupplierSearch]);
-
-  useEffect(() => {
-    if (isEdit && receiptDetail) {
-      setFormData(receiptDetail);
-      if (receiptDetail.company) setCompany(receiptDetail.company);
-    }
-  }, [isEdit, receiptDetail]);
-
-  // --- Calculation Logic ---
-  const calculateTotals = useCallback((updatedFormData: any) => {
-    let netTotal = 0;
-    const updatedItems = (updatedFormData.items || []).map((item: any) => {
-      const qty = parseFloat(item.qty) || 0;
-      const rate = parseFloat(item.rate) || 0;
-      const amount = qty * rate;
-      netTotal += amount;
-      return { ...item, amount, qty, rate };
-    });
-
-    let taxAmount = 0;
-    const updatedTaxes = (updatedFormData.taxes || []).map((tax: any) => {
-      let currentTaxAmount = 0;
-      if (tax.charge_type === 'On Net Total') {
-        currentTaxAmount = (netTotal * (parseFloat(tax.rate) || 0)) / 100;
-      } else if (tax.charge_type === 'Actual') {
-        currentTaxAmount = parseFloat(tax.tax_amount) || 0;
+  const flattenPages = (res: any) => {
+    if (!res?.pages || !Array.isArray(res.pages)) return [];
+    let all: any[] = [];
+    for (let i = 0; i < res.pages.length; i++) {
+      if (Array.isArray(res.pages[i])) {
+        all = all.concat(res.pages[i]);
       }
-      taxAmount += currentTaxAmount;
-      return { ...tax, tax_amount: currentTaxAmount, doctype: 'Purchase Taxes and Charges' };
-    });
-
-    return {
-      ...updatedFormData,
-      items: updatedItems,
-      taxes: updatedTaxes,
-      net_total: netTotal,
-      total: netTotal,
-      grand_total: netTotal + taxAmount,
-      base_net_total: netTotal,
-      base_grand_total: netTotal + taxAmount
-    };
-  }, []);
-
-  // --- Event Handlers ---
-  const handleChange = useCallback((name: string, value: any) => {
-    if (name === 'supplier' && value) {
-      metadataService.getSupplierDetails(value).then(res => {
-        const details = res?.data;
-        if (details) {
-          const updates: any = { supplier: value };
-          if (details.tax_category) updates.tax_category = details.tax_category;
-          
-          // Use default_purchase_taxes_and_charges only
-          // tax_withholding_category is NOT a Purchase Taxes Template and causes 404
-          const taxTemplate = details.default_purchase_taxes_and_charges;
-          if (taxTemplate) {
-            updates.taxes_and_charges = taxTemplate;
-            metadataService.getPurchaseTaxesTemplateDetails(taxTemplate).then(tRes => {
-              if (tRes?.data) {
-                setFormData(prev => calculateTotals({
-                  ...prev,
-                  ...updates,
-                  taxes: (tRes.data.taxes || []).map((t: any) => ({ 
-                    ...t, 
-                    name: undefined, 
-                    doctype: 'Purchase Taxes and Charges' 
-                  }))
-                }));
-              } else {
-                setFormData(prev => calculateTotals({ ...prev, ...updates }));
-              }
-            });
-          } else {
-            setFormData(prev => calculateTotals({ ...prev, ...updates }));
-          }
-        } else {
-          setFormData(prev => calculateTotals({ ...prev, [name]: value }));
-        }
-      });
-    } else if (name === 'taxes_and_charges' && value) {
-      metadataService.getPurchaseTaxesTemplateDetails(value).then(res => {
-        if (res?.data) {
-          setFormData(prev => calculateTotals({ 
-            ...prev, 
-            [name]: value,
-            taxes: (res.data.taxes || []).map((t: any) => ({ 
-              ...t, 
-              name: undefined, 
-              doctype: 'Purchase Taxes and Charges' 
-            }))
-          }));
-        }
-      });
-    } else {
-      setFormData(prev => calculateTotals({ ...prev, [name]: value }));
     }
-  }, [calculateTotals]);
+    return all;
+  };
 
-  const handleItemChange = useCallback(async (index: number, field: string, value: any) => {
-    if (field === 'item_code') {
-      try {
-        const res = await stockApi.getItemDetails(value);
-        const details = res?.data;
-        
-        if (details) {
-          setFormData((prev: any) => {
-            const updatedItems = [...prev.items];
-            const currentItem = { ...updatedItems[index] };
-            
-            currentItem.item_code = value;
-            currentItem.item_name = details.item_name || currentItem.item_name;
-            currentItem.uom = details.stock_uom || currentItem.uom;
-            currentItem.qty = currentItem.qty || 1;
-            currentItem.rate = details.last_purchase_rate || details.valuation_rate || 0;
-            currentItem.warehouse = prev.set_warehouse || currentItem.warehouse;
-            currentItem.use_serial_batch_fields = details.has_serial_no === 1 ? 1 : 0;
-            
-            let taxTemplate = details.item_tax_template || "";
-            if (details.taxes && details.taxes.length > 0) {
-              taxTemplate = details.taxes[0].item_tax_template;
-            }
-            currentItem.item_tax_template = taxTemplate;
-            
-            updatedItems[index] = currentItem;
-            return calculateTotals({ ...prev, items: updatedItems });
-          });
-        }
-      } catch (error) {
-        console.error("Error fetching item details:", error);
-        setFormData((prev: any) => {
-          const updatedItems = [...prev.items];
-          updatedItems[index] = { ...updatedItems[index], [field]: value };
-          return calculateTotals({ ...prev, items: updatedItems });
-        });
-      }
-    } else {
-      setFormData((prev: any) => {
-        const updatedItems = [...prev.items];
-        updatedItems[index] = { ...updatedItems[index], [field]: value };
-        return calculateTotals({ ...prev, items: updatedItems });
+  const suppliers = useMemo(() => flattenPages(supplierRes), [supplierRes]);
+  const items = useMemo(() => flattenPages(itemRes), [itemRes]);
+  const projects = useMemo(() => flattenPages(projectRes), [projectRes]);
+  const costCenters = useMemo(() => flattenPages(costCenterRes), [costCenterRes]);
+
+  useEffect(() => {
+    if (!isEdit) {
+      companyService.getSelectedCompany().then(selected => {
+        if (selected) setValue('company', selected.name);
       });
     }
-  }, [calculateTotals]);
+  }, [isEdit, setValue]);
 
-  const onScanSuccess = useCallback(async (code: string) => {
-    setIsScannerVisible(false);
-    
-    if (activeScanTarget.type === 'item') {
-      try {
-        const result = await metadataService.lookupBarcode(code);
-        if (result?.item) {
-          const detailRes = await stockApi.getItemDetails(result.item.name);
-          const details = detailRes?.data || result.item;
+  useEffect(() => {
+    if (isEdit && receiptDetail) reset(receiptDetail);
+  }, [isEdit, receiptDetail, reset]);
 
-          setFormData(prev => {
-            const existingIdx = prev.items.findIndex((i: any) => i.item_code === details.name);
-            const updatedItems = [...prev.items];
-            
-            let taxTemplate = details.item_tax_template || "";
-            if (details.taxes && details.taxes.length > 0) {
-              taxTemplate = details.taxes[0].item_tax_template;
-            }
-
-            if (existingIdx >= 0) {
-              updatedItems[existingIdx].qty = (parseFloat(updatedItems[existingIdx].qty) || 0) + 1;
-              if (result.type === 'serial') {
-                const current = updatedItems[existingIdx].serial_no ? updatedItems[existingIdx].serial_no.split('\n') : [];
-                if (!current.includes(result.serial_no)) updatedItems[existingIdx].serial_no = [...current, result.serial_no].join('\n');
-              }
-            } else {
-              updatedItems.push({
-                item_code: details.name, 
-                item_name: details.item_name,
-                qty: 1, 
-                uom: details.stock_uom, 
-                warehouse: prev.set_warehouse || '',
-                rate: details.last_purchase_rate || details.valuation_rate || 0,
-                serial_no: result.type === 'serial' ? result.serial_no : '',
-                use_serial_batch_fields: details.has_serial_no === 1 ? 1 : 0,
-                item_tax_template: taxTemplate
-              });
-            }
-            return calculateTotals({ ...prev, items: updatedItems });
-          });
-        } else { Alert.alert("Not Found", `Barcode ${code} not recognized.`); }
-      } catch (e) { Alert.alert("Error", "Scan failed."); }
-    } else if (activeScanTarget.type === 'serial' && activeScanTarget.index !== undefined) {
-      setFormData(prev => {
-        const updated = [...prev.items];
-        const item = updated[activeScanTarget.index!];
-        const current = item.serial_no ? item.serial_no.split('\n').filter(Boolean) : [];
-        if (!current.includes(code)) {
-          item.serial_no = [...current, code].join('\n');
-          if (item.serial_no.split('\n').length > parseFloat(item.qty)) item.qty = item.serial_no.split('\n').length;
-        }
-        return calculateTotals({ ...prev, items: updated });
-      });
-      setIsSerialModalVisible(true);
-    }
-  }, [activeScanTarget, calculateTotals]);
-
-  const handleSubmit = useCallback(async () => {
-    if (!formData.supplier || !formData.company) return Alert.alert("Error", "Supplier and Company required");
-    if (formData.items.length === 0) return Alert.alert("Error", "Items required");
-
+  const updateItemDetails = async (index: number, itemCode: string) => {
     try {
-      const dataToSave = calculateTotals({ ...formData, docstatus: 0 });
-      const cleanData = { ...dataToSave };
-      
-      ['project', 'cost_center', 'tax_category', 'taxes_and_charges', 'set_warehouse', 'supplier_delivery_note'].forEach(f => {
-        if (!cleanData[f]) delete cleanData[f];
-      });
-
-      cleanData.items = cleanData.items.map((i: any) => ({
-        ...i,
-        qty: parseFloat(i.qty) || 0, 
-        rate: parseFloat(i.rate) || 0,
-        amount: (parseFloat(i.qty) || 0) * (parseFloat(i.rate) || 0),
-        use_serial_batch_fields: parseInt(i.use_serial_batch_fields) || 0,
-        item_tax_template: i.item_tax_template || ""
-      }));
-
-      if (cleanData.taxes && cleanData.taxes.length > 0) {
-        cleanData.taxes = cleanData.taxes.map((t: any) => ({
-          ...t,
-          doctype: 'Purchase Taxes and Charges'
-        }));
+      const res = await stockApi.getItemDetails(itemCode);
+      const details = res?.data;
+      if (details) {
+        setValue(`items.${index}.rate`, details.last_purchase_rate || details.valuation_rate || 0);
       }
+    } catch (e) {
+      console.error("Item detail fetch error", e);
+    }
+  };
 
-      const res = await saveMutation.mutateAsync({ data: cleanData, id: receiptId });
-      Alert.alert("Success", "Draft saved.");
-      isEdit ? navigation.goBack() : navigation.replace('PurchaseReceiptDetail', { receiptId: res?.data?.name || receiptId });
-    } catch (e: any) { Alert.alert("Error", e.response?.data?.message || "Save failed"); }
-  }, [formData, receiptId, isEdit, saveMutation, navigation, calculateTotals]);
-
-  // --- Sections Meta ---
-  const sections = useMemo(() => [
-    { id: 'header', title: 'Basic Info', icon: FileText, type: 'blue' },
-    { id: 'items', title: 'Items', icon: Package, type: 'orange' },
-    { id: 'totals', title: 'Totals & Taxes', icon: CreditCard, type: 'green' },
-    { id: 'save', title: 'Finish', icon: CheckCircle2, type: 'blue' },
-  ], []);
+  const onSubmit = async (data: PRFormValues) => {
+    try {
+      const res = await saveMutation.mutateAsync({ data, id: receiptId });
+      Alert.alert("Success", "Purchase Receipt saved");
+      navigation.replace('PurchaseReceiptDetail', { receiptId: receiptId || res.name });
+    } catch (e: any) {
+      Alert.alert("Error", e.message || "Failed to save purchase receipt");
+    }
+  };
 
   const renderSection = useCallback(({ item: section }: any) => {
-    const titleColor = colors[section.type === 'blue' ? 'blue_500' : section.type === 'orange' ? 'orange_500' : 'green_500'];
+    const titleColor = colors[section.type === 'blue' ? 'blue_500' : (section.type === 'orange' ? 'orange_500' : 'green_500')];
+    
     return (
       <View style={[detailStyles.sectionCard, detailStyles[`${section.type}Card` as keyof typeof detailStyles]]}>
         <View style={detailStyles.cardTitleRow}>
@@ -356,69 +219,130 @@ export function PurchaseReceiptEdit() {
           <Text style={[detailStyles.cardTitle, { color: titleColor }]}>{section.title}</Text>
         </View>
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
-          {section.id === 'header' && (
-            <HeaderSection 
-              formData={formData} company={company} suppliers={suppliers} projects={extraMeta.projects}
-              costCenters={extraMeta.costCenters} warehouses={extraMeta.warehouses}
-              handleChange={handleChange} setSupplierSearch={setSupplierSearch}
-              setProjectSearch={(q: string) => metadataService.getProjects(q).then(r => setExtraMeta((p: any) => ({...p, projects: r.data})))}
-              setCostCenterSearch={(q: string) => metadataService.getCostCenters(q).then(r => setExtraMeta((p: any) => ({...p, costCenters: r.data})))}
-              setWarehouseSearch={(q: string) => metadataService.getWarehouses(company, q).then(r => setExtraMeta((p: any) => ({...p, warehouses: r.data})))}
-            />
+          {section.id === 'basic' && (
+            <View>
+              <Controller control={control} name="company" render={({ field: { value } }) => (
+                <Selector label="Company" options={[{name: value, value}]} value={value} onChange={() => {}} disabled icon={Building2} />
+              )} />
+              <Controller control={control} name="supplier" render={({ field: { onChange, value } }) => (
+                <Selector 
+                  label="Supplier" options={suppliers} displayField="supplier_name" value={value} 
+                  onChange={onChange} onSearch={setSupplierSearch} 
+                  onEndReached={() => hasNextSuppliers && fetchNextSuppliers()} 
+                  loadingNextPage={isFetchingSuppliers} icon={User} 
+                />
+              )} />
+              <DateSection watch={watch} setValue={setValue} />
+              <Controller control={control} name="project" render={({ field: { onChange, value } }) => (
+                <Selector 
+                  label="Project" options={projects} value={value} onChange={onChange} 
+                  onSearch={setProjectSearch} onEndReached={() => hasNextProjects && fetchNextProjects()}
+                  loadingNextPage={isFetchingProjects} icon={Briefcase} placeholder="Select Project" 
+                />
+              )} />
+              <Controller control={control} name="cost_center" render={({ field: { onChange, value } }) => (
+                <Selector 
+                  label="Cost Center" options={costCenters} value={value} onChange={onChange} 
+                  onSearch={setCostCenterSearch} onEndReached={() => hasNextCostCenters && fetchNextCostCenters()}
+                  loadingNextPage={isFetchingCostCenters} icon={LayoutGrid} placeholder="Select Cost Center" 
+                />
+              )} />
+            </View>
           )}
+
           {section.id === 'items' && (
-            <ItemsSection 
-              items={formData.items} itemsMetadata={items} warehousesMetadata={extraMeta.warehouses} loadingItems={loadingItems}
-              addItem={() => setFormData((prev: any) => ({...prev, items: [...prev.items, { item_code: '', qty: 1, uom: '', warehouse: prev.set_warehouse || '', rate: 0, serial_no: '', use_serial_batch_fields: 0, item_tax_template: "" }]}))}
-              removeItem={(i: number) => setFormData((prev: any) => calculateTotals({ ...prev, items: prev.items.filter((_: any, idx: number) => idx !== i) }))}
-              handleItemChange={handleItemChange} onItemSearch={setItemSearch}
-              onOpenItemScanner={() => { setActiveScanTarget({ type: 'item' }); setIsScannerVisible(true); }}
-              onOpenSerialModal={(i: number) => { setActiveItemIndex(i); setActiveScanTarget({ type: 'serial', index: i }); setIsSerialModalVisible(true); }}
-            />
+            <View>
+              <Controller control={control} name="set_warehouse" render={({ field: { onChange, value } }) => (
+                <Selector 
+                  label="Common Warehouse" options={warehouses || []} displayField="warehouse_name" value={value} 
+                  onChange={(v) => { onChange(v); fields.forEach((_, i) => setValue(`items.${i}.warehouse`, v)); }} 
+                  icon={Warehouse} loading={loadingWh}
+                />
+              )} />
+              <TouchableOpacity onPress={() => append({ item_code: '', qty: 1, rate: 0 })} style={styles.addItemBtn}>
+                <Plus size={18} color={colors.primary} /><Text style={styles.addItemText}>Add Item</Text>
+              </TouchableOpacity>
+              {fields.map((item, idx) => (
+                <View key={item.id} style={styles.itemCard}>
+                  <View style={styles.itemHeader}>
+                    <Text style={styles.itemLabel}>ITEM #{idx + 1}</Text>
+                    {fields.length > 1 && (
+                      <TouchableOpacity onPress={() => remove(idx)}><Trash2 size={16} color={colors.error} /></TouchableOpacity>
+                    )}
+                  </View>
+                  <Controller control={control} name={`items.${idx}.item_code`} render={({ field: { onChange, value } }) => (
+                    <Selector 
+                      label="Select Item" options={items} displayField="item_name" value={value} 
+                      onChange={(v) => { onChange(v); updateItemDetails(idx, v); }} 
+                      onSearch={setItemSearch} onEndReached={() => hasNextItems && fetchNextItems()} 
+                      loadingNextPage={isFetchingItems} icon={Package} 
+                    />
+                  )} />
+                  <View style={{ flexDirection: 'row', gap: 12 }}>
+                    <View style={{ flex: 1 }}>
+                      <Controller control={control} name={`items.${idx}.qty`} render={({ field: { onChange, value } }) => (
+                        <FormInput label="Qty" value={String(value)} onChangeText={onChange} keyboardType="numeric" icon={ShoppingCart} />
+                      )} />
+                    </View>
+                    <View style={{ flex: 1 }}>
+                      <Controller control={control} name={`items.${idx}.rate`} render={({ field: { onChange, value } }) => (
+                        <FormInput label="Rate" value={String(value)} onChangeText={onChange} keyboardType="numeric" icon={Tag} />
+                      )} />
+                    </View>
+                  </View>
+                  <View style={styles.amountRow}>
+                    <Text style={styles.amountLabel}>AMOUNT</Text>
+                    <Text style={styles.amountValue}>
+                      {watchCurrency} {((watchItems?.[idx]?.qty || 0) * (watchItems?.[idx]?.rate || 0)).toFixed(2)}
+                    </Text>
+                  </View>
+                </View>
+              ))}
+            </View>
           )}
-          {section.id === 'totals' && (
-            <TotalsSection 
-              formData={formData} taxCategories={extraMeta.taxCategories} taxTemplates={extraMeta.taxTemplates}
-              handleChange={handleChange}
-              setTaxCategorySearch={(q: string) => metadataService.getTaxCategories(q).then(r => setExtraMeta((p: any) => ({...p, taxCategories: r.data})))}
-              setTaxTemplateSearch={(q: string) => metadataService.getPurchaseTaxesTemplates(q).then(r => setExtraMeta((p: any) => ({...p, taxTemplates: r.data})))}
-            />
+
+          {section.id === 'taxes' && (
+            <View>
+              <Controller control={control} name="tax_category" render={({ field: { onChange, value } }) => (
+                <Selector label="Tax Category" options={taxCategories || []} value={value} onChange={onChange} icon={Percent} />
+              )} />
+              <Controller control={control} name="taxes_and_charges" render={({ field: { onChange, value } }) => (
+                <Selector label="Taxes and Charges" options={taxTemplates || []} value={value} onChange={onChange} icon={Percent} />
+              )} />
+            </View>
           )}
+
           {section.id === 'save' && (
-            <SaveSection isEdit={isEdit} isPending={saveMutation.isPending} handleSubmit={handleSubmit} />
+            <SaveSection isEdit={isEdit} isPending={saveMutation.isPending} handleSubmit={handleSubmit(onSubmit)} label={isEdit ? "Update Receipt" : "Create Receipt"} />
           )}
         </ScrollView>
       </View>
     );
-  }, [formData, suppliers, extraMeta, company, items, loadingItems, handleChange, handleItemChange, isEdit, saveMutation.isPending, handleSubmit, calculateTotals]);
+  }, [control, suppliers, items, projects, costCenters, warehouses, taxCategories, taxTemplates, loadingWh, fields, append, remove, watchCurrency, watchItems, isEdit, saveMutation.isPending, handleSubmit, onSubmit, setValue, watch, hasNextSuppliers, fetchNextSuppliers, isFetchingSuppliers, hasNextItems, fetchNextItems, isFetchingItems, hasNextProjects, fetchNextProjects, isFetchingProjects, hasNextCostCenters, fetchNextCostCenters, isFetchingCostCenters]);
 
-  if (loadingDetail) return <ModuleLayout title="Loading..." showBack><View style={detailStyles.loadingContainer}><ActivityIndicator size="large" color={colors.primary} /></View></ModuleLayout>;
+  if (isEdit && loadingDetail) return <ModuleLayout title="Loading..." showBack><View style={detailStyles.loadingContainer}><ActivityIndicator size="large" color={colors.primary} /></View></ModuleLayout>;
 
   return (
-    <ModuleLayout title={isEdit ? `Edit Receipt` : "New Purchase Receipt"} showBack>
-      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={{ flex: 1 }} keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}>
+    <ModuleLayout title={isEdit ? "Edit PR" : "New PR"} showBack>
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <View style={detailStyles.container}>
-          <FlatList data={sections} renderItem={renderSection} keyExtractor={(s) => s.id} horizontal showsHorizontalScrollIndicator={false} snapToAlignment="start" decelerationRate="fast" snapToInterval={SCREEN_WIDTH * 0.9 + spacing.xs * 2} contentContainerStyle={detailStyles.horizontalList} keyboardShouldPersistTaps="handled" />
+          <FlatList 
+            data={[{ id: 'basic', title: 'Basic Info', icon: FileText, type: 'blue' }, { id: 'items', title: 'Items List', icon: Package, type: 'orange' }, { id: 'taxes', title: 'Totals & Taxes', icon: Tag, type: 'green' }, { id: 'save', title: 'Finish', icon: CheckCircle2, type: 'blue' }]} 
+            renderItem={renderSection} keyExtractor={(s) => s.id} horizontal showsHorizontalScrollIndicator={false} snapToInterval={SCREEN_WIDTH * 0.9 + spacing.xs * 2} contentContainerStyle={detailStyles.horizontalList} 
+          />
         </View>
       </KeyboardAvoidingView>
-      <BarcodeScanner isVisible={isScannerVisible} onClose={() => { setIsScannerVisible(false); if (activeScanTarget.type === 'serial') setIsSerialModalVisible(true); }} onScan={onScanSuccess} />
-      <SerialNoModal 
-        isVisible={isSerialModalVisible} onClose={() => setIsSerialModalVisible(false)} 
-        onSave={(serials) => {
-          if (activeItemIndex === null) return;
-          setFormData((prev: any) => {
-            const updated = [...prev.items];
-            updated[activeItemIndex].serial_no = serials.join('\n');
-            if (serials.length > 0) updated[activeItemIndex].qty = serials.length;
-            return calculateTotals({ ...prev, items: updated });
-          });
-        }} 
-        initialSerials={activeItemIndex !== null ? formData.items[activeItemIndex]?.serial_no : ''}
-        itemCode={activeItemIndex !== null ? formData.items[activeItemIndex]?.item_code : ''}
-        itemName={activeItemIndex !== null ? formData.items[activeItemIndex]?.item_name : ''}
-        targetQty={activeItemIndex !== null ? parseFloat(formData.items[activeItemIndex]?.qty) || 0 : 0}
-        onOpenScanner={() => { setActiveScanTarget({ type: 'serial', index: activeItemIndex! }); setIsSerialModalVisible(false); setIsScannerVisible(true); }}
-      />
     </ModuleLayout>
   );
 }
+
+const styles = StyleSheet.create({
+  addItemBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.blue_50, padding: 12, borderRadius: 12, marginVertical: 16, justifyContent: 'center' },
+  addItemText: { color: colors.primary, fontWeight: 'bold' },
+  itemCard: { backgroundColor: colors.background, padding: 16, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: colors.border_light },
+  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  itemLabel: { fontSize: 12, fontWeight: 'bold', color: colors.text_tertiary },
+  amountRow: { marginTop: 8, padding: 8, backgroundColor: colors.white, borderRadius: 8, alignItems: 'flex-end' },
+  amountLabel: { fontSize: 10, color: colors.text_tertiary },
+  amountValue: { fontSize: 14, fontWeight: 'bold', color: colors.text_primary },
+});

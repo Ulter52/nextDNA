@@ -1,12 +1,13 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { stockApi } from '../services/stockApi';
 import { companyService } from '@core/services/companyService';
-import { fetchResource } from '@core/api/frappeApiHelpers';
+import { fetchResource, updateResource, createResource } from '@core/api/frappeApiHelpers';
 
 const keys = {
-  list: (params: any) => ['materialRequests', params],
-  detail: (id: string) => ['materialRequestDetail', id],
-  meta: () => ['materialRequestMeta'],
+  all: ['materialRequests'] as const,
+  list: (params: any) => [...keys.all, 'list', params] as const,
+  detail: (id: string) => [...keys.all, 'detail', id] as const,
+  meta: () => [...keys.all, 'metadata'] as const,
 };
 
 export const useMaterialRequests = (params: {
@@ -14,33 +15,31 @@ export const useMaterialRequests = (params: {
   status: string;
   type: string;
 }) => {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: keys.list(params),
-    queryFn: async () => {
-      const company = await companyService.getSelectedCompany();
-      return stockApi.getMaterialRequests(
-        company?.name || '',
-        params.search,
-        params.status,
-        params.type
-      );
-    },
-    staleTime: 2 * 60 * 1000,
-  });
-};
-
-export const useMaterialRequestMeta = () => {
-  return useQuery({
-    queryKey: keys.meta(),
-    queryFn: async () => {
+    queryFn: async ({ pageParam = 0 }) => {
       try {
-        const meta = await stockApi.getMaterialRequestMeta();
-        return meta || {};
+        const company = await companyService.getSelectedCompany();
+        const data = await stockApi.getMaterialRequests(
+          company?.name || '',
+          params.search,
+          params.status,
+          params.type,
+          pageParam as number,
+          20
+        );
+        return Array.isArray(data) ? data : [];
       } catch (e) {
-        return {};
+        return [];
       }
     },
-    staleTime: 24 * 60 * 60 * 1000,
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 20) return undefined;
+      return (allPages?.length || 0) * 20;
+    },
+    initialPageParam: 0,
+    staleTime: 2 * 60 * 1000,
   });
 };
 
@@ -58,12 +57,15 @@ export const useSaveMaterialRequest = () => {
   return useMutation({
     mutationFn: async ({ data, id }: { data: any; id?: string }) => {
       if (id) {
-        return stockApi.updateResource('Material Request', id, data);
+        return updateResource('Material Request', id, data);
       }
-      return stockApi.createMaterialRequest(data);
+      return createResource('Material Request', data);
     },
-    onSuccess: () => {
-      queryClient.invalidateQueries({ queryKey: ['materialRequests'] });
+    onSuccess: (_, variables) => {
+      queryClient.invalidateQueries({ queryKey: keys.all });
+      if (variables.id) {
+        queryClient.invalidateQueries({ queryKey: keys.detail(variables.id) });
+      }
     },
   });
 };

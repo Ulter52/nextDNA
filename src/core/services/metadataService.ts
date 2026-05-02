@@ -131,22 +131,24 @@ export const metadataService = {
     });
   },
 
-  getCostCenters: (search?: string) => {
+  getCostCenters: (search?: string, start: number = 0, limit: number = 100) => {
     const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
     return fetchResource('Cost Center', { 
       fields: '["name"]', 
       filters,
-      limit_page_length: 100,
+      limit_start: start,
+      limit_page_length: limit,
       order_by: 'name asc'
     });
   },
 
-  getProjects: (search?: string) => {
+  getProjects: (search?: string, start: number = 0, limit: number = 100) => {
     const filters = search ? `[["name", "like", "%${search}%"]]` : undefined;
     return fetchResource('Project', { 
       fields: '["name"]', 
       filters,
-      limit_page_length: 100,
+      limit_start: start,
+      limit_page_length: limit,
       order_by: 'name asc'
     });
   },

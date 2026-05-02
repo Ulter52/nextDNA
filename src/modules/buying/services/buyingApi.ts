@@ -2,13 +2,14 @@ import { fetchResource, createResource, updateResource, callMethod } from '../..
 
 export const buyingApi = {
   // --- Supplier Methods ---
-  getSuppliers: (search?: string, limit = 20) => {
+  getSuppliers: (search?: string, start: number = 0, limit: number = 20) => {
     const filters: any[] = [];
     if (search) filters.push(["supplier_name", "like", `%${search}%`]);
     
     return fetchResource('Supplier', {
       fields: '["name", "supplier_name", "supplier_group", "supplier_type", "image"]',
       filters: filters.length > 0 ? JSON.stringify(filters) : undefined,
+      limit_start: start,
       limit_page_length: limit,
       order_by: 'modified desc'
     });
@@ -28,7 +29,7 @@ export const buyingApi = {
   updateContact: (id: string, data: any) => updateResource('Contact', id, data),
 
   // --- Purchase Order Methods ---
-  getPurchaseOrders: (search?: string, status?: string, limit = 20) => {
+  getPurchaseOrders: (search?: string, status?: string, start: number = 0, limit: number = 20) => {
     const filters: any[] = [];
     if (search) filters.push(["name", "like", `%${search}%`]);
     if (status && status !== 'All') filters.push(["status", "=", status]);
@@ -36,6 +37,7 @@ export const buyingApi = {
     return fetchResource('Purchase Order', {
       fields: '["name", "supplier", "transaction_date", "status", "grand_total", "currency"]',
       filters: filters.length > 0 ? JSON.stringify(filters) : undefined,
+      limit_start: start,
       limit_page_length: limit,
       order_by: 'transaction_date desc'
     }).then(r => r?.data || []);
@@ -50,7 +52,7 @@ export const buyingApi = {
   submitPurchaseOrder: (id: string) => updateResource('Purchase Order', id, { docstatus: 1 }),
 
   // --- Purchase Invoice Methods ---
-  getPurchaseInvoices: (search?: string, status?: string, limit = 20) => {
+  getPurchaseInvoices: (search?: string, status?: string, start: number = 0, limit: number = 20) => {
     const filters: any[] = [];
     if (search) filters.push(["name", "like", `%${search}%`]);
     if (status && status !== 'All') filters.push(["status", "=", status]);
@@ -58,6 +60,7 @@ export const buyingApi = {
     return fetchResource('Purchase Invoice', {
       fields: '["name", "supplier", "posting_date", "status", "grand_total", "currency", "outstanding_amount"]',
       filters: filters.length > 0 ? JSON.stringify(filters) : undefined,
+      limit_start: start,
       limit_page_length: limit,
       order_by: 'posting_date desc'
     }).then(r => r?.data || []);

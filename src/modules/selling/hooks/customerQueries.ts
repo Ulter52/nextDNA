@@ -8,7 +8,7 @@ export const customerKeys = {
   list: (filters: any) => [...customerKeys.lists(), { filters }] as const,
   details: () => [...customerKeys.all, 'detail'] as const,
   detail: (id: string) => [...customerKeys.details(), id] as const,
-  metadata: (type: string) => [...customerKeys.all, 'metadata', type] as const,
+  metadata: (type: string, search?: string) => [...customerKeys.all, 'metadata', type, { search }] as const,
 };
 
 export const useCustomers = (search?: string, filters: any = {}) => {
@@ -23,8 +23,9 @@ export const useCustomers = (search?: string, filters: any = {}) => {
       }
     },
     getNextPageParam: (lastPage, allPages) => {
-      if (!lastPage || !Array.isArray(lastPage) || lastPage.length < 20) return undefined;
-      return allPages.length * 20;
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 20) return undefined;
+      return (allPages?.length || 0) * 20;
     },
     initialPageParam: 0,
     staleTime: 5 * 60 * 1000,
@@ -32,18 +33,44 @@ export const useCustomers = (search?: string, filters: any = {}) => {
 };
 
 export const useCustomerGroups = (search?: string) => {
-  return useQuery({
-    queryKey: customerKeys.metadata(`groups-${search || ''}`),
-    queryFn: () => metadataService.getCustomerGroups(search).then(r => r?.data || []),
-    staleTime: search ? 0 : 24 * 60 * 60 * 1000,
+  return useInfiniteQuery({
+    queryKey: customerKeys.metadata('groups', search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const res = await metadataService.getCustomerGroups(search);
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 100) return undefined;
+      return (allPages?.length || 0) * 100;
+    },
+    initialPageParam: 0,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 
 export const useTerritories = (search?: string) => {
-  return useQuery({
-    queryKey: customerKeys.metadata(`territories-${search || ''}`),
-    queryFn: () => metadataService.getTerritories(search).then(r => r?.data || []),
-    staleTime: search ? 0 : 24 * 60 * 60 * 1000,
+  return useInfiniteQuery({
+    queryKey: customerKeys.metadata('territories', search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const res = await metadataService.getTerritories(search);
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 100) return undefined;
+      return (allPages?.length || 0) * 100;
+    },
+    initialPageParam: 0,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 

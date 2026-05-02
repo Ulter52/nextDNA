@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { fetchResource, createResource, updateResource } from '@core/api/frappeApiHelpers';
 import { companyService } from '@core/services/companyService';
 
@@ -6,27 +6,40 @@ const keys = {
   all: ['deliveryNotes'] as const,
   list: (params: any) => [...keys.all, 'list', params] as const,
   detail: (id: string) => [...keys.all, 'detail', id] as const,
+  metadata: (type: string, search?: string) => [...keys.all, 'metadata', type, { search }] as const,
 };
 
 export const useDeliveryNotes = (params: {
   search: string;
   status: string;
 }) => {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: keys.list(params),
-    queryFn: async () => {
-      const company = await companyService.getSelectedCompany();
-      const filters: any[] = [["company", "=", company?.name || '']];
-      if (params.search) filters.push(["name", "like", `%${params.search}%`]);
-      if (params.status && params.status !== 'All') filters.push(["status", "=", params.status]);
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const company = await companyService.getSelectedCompany();
+        const filters: any[] = [["company", "=", company?.name || '']];
+        if (params.search) filters.push(["name", "like", `%${params.search}%`]);
+        if (params.status && params.status !== 'All') filters.push(["status", "=", params.status]);
 
-      return fetchResource('Delivery Note', {
-        fields: '["name", "customer", "posting_date", "status", "grand_total", "currency"]',
-        filters: JSON.stringify(filters),
-        limit_page_length: 20,
-        order_by: 'posting_date desc'
-      }).then(r => r?.data || []);
+        const res = await fetchResource('Delivery Note', {
+          fields: '["name", "customer", "posting_date", "status", "grand_total", "currency"]',
+          filters: JSON.stringify(filters),
+          limit_start: pageParam as number,
+          limit_page_length: 20,
+          order_by: 'posting_date desc'
+        });
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
     },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 20) return undefined;
+      return (allPages?.length || 0) * 20;
+    },
+    initialPageParam: 0,
     staleTime: 2 * 60 * 1000,
   });
 };

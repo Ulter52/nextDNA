@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useInfiniteQuery, useMutation, useQueryClient, useQuery } from '@tanstack/react-query';
 import { buyingApi } from '../services/buyingApi';
 import { metadataService } from '../../../core/services/metadataService';
 
@@ -6,15 +6,26 @@ export const piKeys = {
   all: ['purchaseInvoices'] as const,
   list: (params: any) => [...piKeys.all, 'list', params] as const,
   detail: (id: string) => [...piKeys.all, 'detail', id] as const,
-  suppliers: (search?: string) => ['metadata', 'suppliers', search] as const,
-  items: (search?: string) => ['metadata', 'items', search] as const,
-  costCenters: (search?: string) => ['metadata', 'costCenters', search] as const,
+  metadata: (type: string, search?: string) => [...piKeys.all, 'metadata', type, { search }] as const,
 };
 
 export const usePurchaseInvoices = (params: { search?: string; status?: string }) => {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: piKeys.list(params),
-    queryFn: () => buyingApi.getPurchaseInvoices(params.search, params.status),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const data = await buyingApi.getPurchaseInvoices(params.search, params.status, pageParam as number);
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 20) return undefined;
+      return (allPages?.length || 0) * 20;
+    },
+    initialPageParam: 0,
     staleTime: 2 * 60 * 1000,
   });
 };
@@ -29,26 +40,44 @@ export const usePurchaseInvoiceDetail = (id: string) => {
 };
 
 export const usePISuppliers = (search?: string) => {
-  return useQuery({
-    queryKey: piKeys.suppliers(search),
-    queryFn: () => metadataService.getSuppliers(search).then(r => r?.data || []),
+  return useInfiniteQuery({
+    queryKey: piKeys.metadata('suppliers', search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const res = await metadataService.getSuppliers(search);
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 100) return undefined;
+      return (allPages?.length || 0) * 100;
+    },
+    initialPageParam: 0,
     staleTime: 5 * 60 * 1000,
   });
 };
 
 export const usePIItems = (search?: string) => {
-  return useQuery({
-    queryKey: piKeys.items(search),
-    queryFn: () => metadataService.getItems(search).then(r => r?.data || []),
+  return useInfiniteQuery({
+    queryKey: piKeys.metadata('items', search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const res = await metadataService.getItems(search);
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 50) return undefined;
+      return (allPages?.length || 0) * 50;
+    },
+    initialPageParam: 0,
     staleTime: 5 * 60 * 1000,
-  });
-};
-
-export const usePICostCenters = (search?: string) => {
-  return useQuery({
-    queryKey: piKeys.costCenters(search),
-    queryFn: () => metadataService.getCostCenters(search).then(r => r?.data || []),
-    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 

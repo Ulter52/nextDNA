@@ -3,29 +3,33 @@ import { Quotation } from '../types';
 
 export const quotationService = {
   async getQuotations(search?: string, status?: string, start: number = 0, limit: number = 20): Promise<Quotation[]> {
-    const filters: any[] = [];
-    if (search) {
-      filters.push(["name", "like", `%${search}%`]);
-    }
-    if (status && status !== 'All') {
-      filters.push(["status", "=", status]);
-    }
+    try {
+      const filters: any[] = [];
+      if (search) {
+        filters.push(["name", "like", `%${search}%`]);
+      }
+      if (status && status !== 'All') {
+        filters.push(["status", "=", status]);
+      }
 
-    const response = await apiClient.get('/api/resource/Quotation', {
-      params: {
-        fields: '["name", "party_name", "customer_name", "transaction_date", "grand_total", "status", "currency"]',
-        filters: filters.length > 0 ? JSON.stringify(filters) : undefined,
-        limit_start: start,
-        limit_page_length: limit,
-        order_by: 'transaction_date desc',
-      },
-    });
-    return response.data.data;
+      const response = await apiClient.get('/api/resource/Quotation', {
+        params: {
+          fields: '["name", "party_name", "customer_name", "transaction_date", "grand_total", "status", "currency"]',
+          filters: filters.length > 0 ? JSON.stringify(filters) : undefined,
+          limit_start: start,
+          limit_page_length: limit,
+          order_by: 'transaction_date desc',
+        },
+      });
+      return response?.data?.data || [];
+    } catch (e) {
+      return [];
+    }
   },
 
   async getQuotation(name: string): Promise<any> {
     const response = await apiClient.get(`/api/resource/Quotation/${name}`);
-    return response.data.data;
+    return response?.data?.data;
   },
 
   async createQuotation(data: any): Promise<any> {
@@ -34,6 +38,11 @@ export const quotationService = {
       doctype: 'Quotation'
     });
     return response.data.data;
+  },
+
+  async updateQuotation(name: string, data: any): Promise<any> {
+    const response = await apiClient.put(`/api/resource/Quotation/${name}`, data);
+    return response?.data?.data;
   },
 
   async submitQuotation(doc: any): Promise<any> {

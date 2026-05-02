@@ -14,10 +14,18 @@ export const quotationKeys = {
 export const useQuotations = (search?: string, status?: string) => {
   return useInfiniteQuery({
     queryKey: quotationKeys.list({ search, status }),
-    queryFn: ({ pageParam = 0 }) => 
-      quotationService.getQuotations(search, status, pageParam as number),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const data = await quotationService.getQuotations(search, status, pageParam as number);
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    },
     getNextPageParam: (lastPage, allPages) => {
-      return lastPage.length === 20 ? allPages.length * 20 : undefined;
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 20) return undefined;
+      return (allPages?.length || 0) * 20;
     },
     initialPageParam: 0,
     staleTime: 5 * 60 * 1000,
@@ -42,9 +50,22 @@ export const useCompanies = () => {
 };
 
 export const useSellingItems = (search?: string) => {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: quotationKeys.metadata('items', search),
-    queryFn: () => sellingService.getItems(search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const data = await sellingService.getItems(search, pageParam as number);
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 100) return undefined;
+      return (allPages?.length || 0) * 100;
+    },
+    initialPageParam: 0,
     staleTime: 5 * 60 * 1000,
   });
 };
@@ -63,7 +84,7 @@ export const useSaveQuotation = () => {
   return useMutation({
     mutationFn: async ({ data, id }: { data: any; id?: string }) => {
       if (id) {
-        return quotationService.createQuotation(data); 
+        return quotationService.updateQuotation(id, data);
       }
       return quotationService.createQuotation(data);
     },
