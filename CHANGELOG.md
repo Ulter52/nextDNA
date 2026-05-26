@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.5.0](https://github.com/Ulter52/nextDNA/compare/NextDNA-v1.4.0...NextDNA-v1.5.0) (2026-05-26)
+
+
+### Features
+
+* enhance sales order UX and performanceChange ([b3e84c6](https://github.com/Ulter52/nextDNA/commit/b3e84c6ae629c9586bfdbcab8d814eec3b4f5d15))
+* Global Boundary error implementation ([a7422b5](https://github.com/Ulter52/nextDNA/commit/a7422b5953afb9d629ef5cf12069f50db7f8a4b4))
+* Global Error Boundary ([2791dc2](https://github.com/Ulter52/nextDNA/commit/2791dc28d94810024141971e64aef0c9f2781c42))
+* implement infinite scroll and refactor forms across Buying, Selling, and Stock modules ([98aab54](https://github.com/Ulter52/nextDNA/commit/98aab541da3f3f9c64c0cbde6decf9edd17de7a2))
+* Revamped login form with option to authenticate through Biometrics ([fa84ea1](https://github.com/Ulter52/nextDNA/commit/fa84ea1af4b69ee471c38545b005f52240b9ca31))
+* **Sales Invoice:** implement infinite scroll lookups and improve form stability ([e58db5c](https://github.com/Ulter52/nextDNA/commit/e58db5c1eeec78790a85107d47bd505cf27f87b9))
+
+
+### Bug Fixes
+
+* installed dependencies: react-hook-form, zod, @hookform/resolvers,react-native-keychain, react-native-biometric ([05dfc41](https://github.com/Ulter52/nextDNA/commit/05dfc41ec0685bbcd0f590beb95af78a162cfe3a))
+* Missing @babel/plugin-transform-export-namespace-from ([16e722d](https://github.com/Ulter52/nextDNA/commit/16e722da040a617968fb3edac47e4838e3c5ecb6))
+* Permission for biometrics added ([6f17eed](https://github.com/Ulter52/nextDNA/commit/6f17eed42bfd7e94c53d5409111078ba32b00b7e))
+
 ## [1.4.0](https://github.com/Ulter52/nextDNA/compare/NextDNA-v1.3.0...NextDNA-v1.4.0) (2026-04-26)
 
 
