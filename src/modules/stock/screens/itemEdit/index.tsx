@@ -1,472 +1,357 @@
-import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
-import { View, Text, FlatList, ActivityIndicator, ScrollView, Dimensions, TextInput, Switch, TouchableOpacity, Alert, KeyboardAvoidingView, Platform } from 'react-native';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, FlatList, ActivityIndicator, Alert, KeyboardAvoidingView, Platform, Dimensions, ScrollView, Text, TouchableOpacity, StyleSheet, Switch } from 'react-native';
 import { 
   Package, Box, Tag, Activity, Layers, Barcode, Calendar, Weight,
-  Truck, ShieldCheck, Percent, ClipboardList, Receipt, Settings,
-  Scale, Save, Plus, Trash2, CheckCircle2, Bookmark, Ruler
+  Truck, ShieldCheck, Percent, ClipboardList, Receipt, Settings, FileText,
+  Scale, Save, Plus, Trash2, CheckCircle2, Bookmark, Ruler 
 } from 'lucide-react-native';
-import { ModuleLayout } from '../../../../core/components/ModuleLayout';
-import { stockApi } from '../../services/stockApi';
-import { styles } from '../itemDetail/styles';
-import { colors, spacing, borderRadius, shadow } from '../../../../core/theme';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { Selector } from '../../../../core/components/Selector';
-import { useDebounce } from '../../../../core/utils/debounce';
+import { useForm, Controller, useFieldArray } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import DateTimePicker from '@react-native-community/datetimepicker';
+
+import { ModuleLayout } from '../../../../core/components/ModuleLayout';
+import { colors, spacing, borderRadius, shadow } from '../../../../core/theme';
+import { styles as detailStyles } from '../itemDetail/styles';
+
 import { 
   useBrands, useItemGroups, useUOMs, 
   useHSNCodes, useTaxTemplates, useItemDetail 
 } from '../../hooks/itemQueries';
+import { stockApi } from '../../services/stockApi';
+
+import { FormInput } from '../../../../core/components/FormInput';
+import { Selector } from '../../../../core/components/Selector';
+import { SaveSection } from '../../../../core/components/SaveSection';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
-// Optimized Input Component to prevent re-renders
-const FormInput = memo(({ label, value, onChangeText, placeholder, icon: Icon, keyboardType = 'default', editable = true }: any) => (
-  <View style={[styles.infoRow, { flexDirection: 'column', alignItems: 'flex-start', borderBottomWidth: 1, borderBottomColor: colors.border_light, paddingVertical: spacing.md }]}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-      {Icon && <Icon size={12} color={colors.text_tertiary} />}
-      <Text style={[styles.infoLabel, { textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }]}>{label}</Text>
-    </View>
-    <TextInput
-      style={{ fontSize: 14, color: colors.text_primary, fontWeight: '600', padding: 0, width: '100%' }}
-      value={String(value ?? '')}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      keyboardType={keyboardType}
-      placeholderTextColor={colors.text_tertiary}
-      editable={editable}
-      autoCorrect={false}
-      spellCheck={false}
+// 1. Zod Schema
+const itemUomSchema = z.object({
+  uom: z.string().min(1, 'Required'),
+  conversion_factor: z.coerce.number().positive(),
+});
+
+const itemTaxSchema = z.object({
+  item_tax_template: z.string().min(1, 'Required'),
+  valid_from: z.string().optional(),
+});
+
+const itemSchema = z.object({
+  item_code: z.string().min(1, 'Required'),
+  item_name: z.string().min(1, 'Required'),
+  item_group: z.string().default('All Item Groups'),
+  stock_uom: z.string().default('Nos'),
+  brand: z.string().optional(),
+  gst_hsn_code: z.string().optional(),
+  description: z.string().optional(),
+  is_stock_item: z.number().default(1),
+  has_variants: z.number().default(0),
+  disabled: z.number().default(0),
+  is_purchase_item: z.number().default(1),
+  is_sales_item: z.number().default(1),
+  grant_commission: z.number().default(1),
+  max_discount: z.coerce.number().min(0).max(100).default(0),
+  valuation_method: z.string().default('FIFO'),
+  valuation_rate: z.coerce.number().min(0).default(0),
+  shelf_life_in_days: z.coerce.number().min(0).default(0),
+  end_of_life: z.string().optional(),
+  default_material_request_type: z.string().default('Purchase'),
+  warranty_period: z.coerce.number().min(0).default(0),
+  weight_per_unit: z.coerce.number().min(0).default(0),
+  weight_uom: z.string().optional(),
+  allow_negative_stock: z.number().default(0),
+  has_batch_no: z.number().default(0),
+  has_serial_no: z.number().default(0),
+  uoms: z.array(itemUomSchema).optional(),
+  taxes: z.array(itemTaxSchema).optional(),
+});
+
+type ItemFormValues = z.infer<typeof itemSchema>;
+
+/**
+ * Helper Boolean Component
+ */
+const BooleanField = ({ label, value, onChange }: any) => (
+  <View style={styles.booleanRow}>
+    <Text style={styles.booleanLabel}>{label}</Text>
+    <Switch
+      value={!!value}
+      onValueChange={(val) => onChange(val ? 1 : 0)}
+      trackColor={{ false: colors.neutral_200, true: colors.primary }}
+      thumbColor={colors.white}
     />
   </View>
-));
+);
 
 export function ItemEdit() {
   const route = useRoute<any>();
   const navigation = useNavigation<any>();
   const { itemCode } = route.params || {};
   const isEdit = !!itemCode;
-  
-  const [submitting, setSubmitting] = useState(false);
-  
-  // Search States for Selectors
+
   const [brandSearch, setBrandSearch] = useState('');
   const [groupSearch, setGroupSearch] = useState('');
   const [uomSearch, setUomSearch] = useState('');
   const [hsnSearch, setHsnSearch] = useState('');
   const [taxSearch, setTaxSearch] = useState('');
 
-  // Debounced Search Values
-  const debouncedBrandSearch = useDebounce(brandSearch);
-  const debouncedGroupSearch = useDebounce(groupSearch);
-  const debouncedUomSearch = useDebounce(uomSearch);
-  const debouncedHsnSearch = useDebounce(hsnSearch);
-  const debouncedTaxSearch = useDebounce(taxSearch);
-
-  const [formData, setFormData] = useState<any>({
-    item_code: '',
-    item_name: '',
-    item_group: 'All Item Groups',
-    stock_uom: 'Nos',
-    brand: '',
-    gst_hsn_code: '',
-    description: '',
-    is_stock_item: 1,
-    has_variants: 0,
-    disabled: 0,
-    is_purchase_item: 1,
-    is_sales_item: 1,
-    grant_commission: 1,
-    max_discount: 0,
-    valuation_method: 'FIFO',
-    valuation_rate: 0,
-    shelf_life_in_days: 0,
-    end_of_life: '',
-    default_material_request_type: 'Purchase',
-    warranty_period: 0,
-    weight_per_unit: 0,
-    weight_uom: '',
-    allow_negative_stock: 0,
-    has_batch_no: 0,
-    has_serial_no: 0,
-    uoms: [],
-    taxes: []
+  const { control, handleSubmit, watch, setValue, reset } = useForm<ItemFormValues>({
+    resolver: zodResolver(itemSchema),
+    defaultValues: {
+      item_group: 'All Item Groups',
+      stock_uom: 'Nos',
+      is_stock_item: 1,
+      is_purchase_item: 1,
+      is_sales_item: 1,
+      valuation_method: 'FIFO',
+      default_material_request_type: 'Purchase',
+      uoms: [],
+      taxes: []
+    }
   });
 
-  // Fetch Metadata with React Query (Using debounced search)
-  const { data: brands, isLoading: loadingBrands } = useBrands(debouncedBrandSearch);
-  const { data: itemGroups, isLoading: loadingGroups } = useItemGroups(debouncedGroupSearch);
-  const { data: uoms, isLoading: loadingUoms } = useUOMs(debouncedUomSearch);
-  const { data: hsnCodes, isLoading: loadingHsn } = useHSNCodes(debouncedHsnSearch);
-  const { data: taxTemplates, isLoading: loadingTaxes } = useTaxTemplates(debouncedTaxSearch);
+  const { fields: uomFields, append: appendUom, remove: removeUom } = useFieldArray({ control, name: "uoms" });
+  const { fields: taxFields, append: appendTax, remove: removeTax } = useFieldArray({ control, name: "taxes" });
 
-  // Fetch Item Data if editing
-  const { data: itemDetail, isLoading: loading } = useItemDetail(itemCode);
+  // Queries
+  const { data: itemDetail, isLoading: loadingDetail } = useItemDetail(itemCode || '');
+  
+  const { 
+    data: brandRes, fetchNextPage: fetchNextBrands, hasNextPage: hasNextBrands, isFetchingNextPage: isFetchingBrands 
+  } = useBrands(brandSearch);
+  
+  const { 
+    data: groupRes, fetchNextPage: fetchNextGroups, hasNextPage: hasNextGroups, isFetchingNextPage: isFetchingGroups 
+  } = useItemGroups(groupSearch);
+  
+  const { 
+    data: uomRes, fetchNextPage: fetchNextUOMs, hasNextPage: hasNextUOMs, isFetchingNextPage: isFetchingUOMs 
+  } = useUOMs(uomSearch);
+
+  const { 
+    data: hsnRes, fetchNextPage: fetchNextHSN, hasNextPage: hasNextHSN, isFetchingNextPage: isFetchingHSN 
+  } = useHSNCodes(hsnSearch);
+
+  const { 
+    data: taxRes, fetchNextPage: fetchNextTaxes, hasNextPage: hasNextTaxes, isFetchingNextPage: isFetchingTaxOptions 
+  } = useTaxTemplates(taxSearch);
+
+  const flattenPages = (res: any) => {
+    if (!res?.pages || !Array.isArray(res.pages)) return [];
+    let all: any[] = [];
+    for (let i = 0; i < res.pages.length; i++) {
+      if (Array.isArray(res.pages[i])) {
+        all = all.concat(res.pages[i]);
+      }
+    }
+    return all;
+  };
+
+  const brands = useMemo(() => flattenPages(brandRes), [brandRes]);
+  const itemGroups = useMemo(() => flattenPages(groupRes), [groupRes]);
+  const uoms = useMemo(() => flattenPages(uomRes), [uomRes]);
+  const hsnCodes = useMemo(() => flattenPages(hsnRes), [hsnRes]);
+  const taxTemplates = useMemo(() => flattenPages(taxRes), [taxRes]);
 
   useEffect(() => {
-    if (isEdit && itemDetail) {
-      setFormData(itemDetail);
-    }
-  }, [isEdit, itemDetail]);
+    if (isEdit && itemDetail) reset(itemDetail);
+  }, [isEdit, itemDetail, reset]);
 
-  const handleChange = useCallback((name: string, value: any) => {
-    setFormData((prev: any) => ({ ...prev, [name]: value }));
-  }, []);
-
-  const handleArrayChange = useCallback((tableName: string, index: number, field: string, value: any) => {
-    setFormData((prev: any) => {
-      const updatedArray = [...(prev[tableName] || [])];
-      updatedArray[index] = { ...updatedArray[index], [field]: value };
-      return { ...prev, [tableName]: updatedArray };
-    });
-  }, []);
-
-  const addRow = useCallback((tableName: string, defaultValue: any) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [tableName]: [...(prev[tableName] || []), defaultValue]
-    }));
-  }, []);
-
-  const removeRow = useCallback((tableName: string, index: number) => {
-    setFormData((prev: any) => ({
-      ...prev,
-      [tableName]: (prev[tableName] || []).filter((_: any, i: number) => i !== index)
-    }));
-  }, []);
-
-  const handleSubmit = async () => {
-    if (!formData.item_code && !formData.name && !isEdit) {
-       Alert.alert("Error", "Item Code is required");
-       return;
-    }
-    if (!formData.item_name) {
-      Alert.alert("Error", "Item Name is required");
-      return;
-    }
-
-    setSubmitting(true);
+  const onSubmit = async (data: ItemFormValues) => {
     try {
       if (isEdit) {
-        await stockApi.updateItem(itemCode, formData);
+        await stockApi.updateItem(itemCode, data);
         Alert.alert("Success", "Item updated successfully");
       } else {
-        await stockApi.createItem(formData);
+        await stockApi.createItem(data);
         Alert.alert("Success", "Item created successfully");
       }
       navigation.goBack();
     } catch (err: any) {
-      const msg = err.response?.data?.message || "Failed to save item";
-      Alert.alert("Error", typeof msg === 'string' ? msg : "Action failed");
-    } finally {
-      setSubmitting(false);
+      Alert.alert("Error", err.response?.data?.message || "Failed to save item");
     }
   };
 
-  const sections = useMemo(() => [
-    { id: 'details', title: 'Details', icon: ClipboardList, type: 'blue' },
-    { id: 'settings', title: 'Settings', icon: Settings, type: 'cyan' },
-    { id: 'inventory', title: 'Inventory', icon: Box, type: 'orange' },
-    { id: 'units', title: 'Units & UOM', icon: Ruler, type: 'purple' },
-    { id: 'taxes', title: 'Taxes', icon: Receipt, type: 'green' },
-    { id: 'save', title: 'Finish', icon: CheckCircle2, type: 'blue' },
-  ], []);
-
-  const renderSection = ({ item: section }: { item: any }) => {
-    const Icon = section.icon;
-    const cardStyle = [
-      styles.sectionCard,
-      section.type === 'blue' && styles.blueCard,
-      section.type === 'cyan' && styles.cyanCard,
-      section.type === 'green' && styles.greenCard,
-      section.type === 'orange' && styles.orangeCard,
-      section.type === 'purple' && styles.purpleCard,
-    ];
-
+  const renderSection = useCallback(({ item: section }: any) => {
     const titleColor = colors[
       section.type === 'blue' ? 'blue_500' : 
       section.type === 'cyan' ? 'teal_500' : 
       section.type === 'green' ? 'green_500' : 
       section.type === 'orange' ? 'orange_500' : 'purple_500'
     ];
-
+    
     return (
-      <View style={cardStyle}>
-        <View style={styles.cardTitleRow}>
-          <Icon size={22} color={titleColor} strokeWidth={2.5} />
-          <Text style={[styles.cardTitle, { color: titleColor }]}>{section.title}</Text>
+      <View style={[detailStyles.sectionCard, detailStyles[`${section.type}Card` as keyof typeof detailStyles]]}>
+        <View style={detailStyles.cardTitleRow}>
+          <section.icon size={22} color={titleColor} strokeWidth={2.5} />
+          <Text style={[detailStyles.cardTitle, { color: titleColor }]}>{section.title}</Text>
         </View>
-
         <ScrollView showsVerticalScrollIndicator={false} keyboardShouldPersistTaps="handled">
           {section.id === 'details' && (
             <View>
-              <FormInput 
-                label="Item Name" 
-                value={formData.item_name} 
-                onChangeText={(val: string) => handleChange('item_name', val)} 
-                icon={Package} 
-                placeholder="Required" 
-              />
-              <FormInput 
-                label="Item Code" 
-                value={isEdit ? formData.name : formData.item_code} 
-                onChangeText={(val: string) => handleChange(isEdit ? 'name' : 'item_code', val)} 
-                icon={Barcode} 
-                placeholder="Required" 
-                editable={!isEdit}
-              />
-              
-              <Selector 
-                label="Brand" 
-                options={brands || []} 
-                value={formData.brand} 
-                onChange={(val) => handleChange('brand', val)} 
-                onSearch={setBrandSearch}
-                loading={loadingBrands}
-                icon={Bookmark}
-                placeholder="Select Brand"
-              />
-
-              <Selector 
-                label="Item Group" 
-                options={itemGroups || []} 
-                value={formData.item_group} 
-                onChange={(val) => handleChange('item_group', val)} 
-                onSearch={setGroupSearch}
-                loading={loadingGroups}
-                icon={Layers}
-                placeholder="Select Item Group"
-              />
-
-              <Selector 
-                label="HSN/SAC" 
-                options={hsnCodes || []} 
-                value={formData.gst_hsn_code} 
-                onChange={(val) => handleChange('gst_hsn_code', val)} 
-                onSearch={setHsnSearch}
-                loading={loadingHsn}
-                icon={Barcode}
-                placeholder="Select HSN/SAC"
-              />
-
-              <FormInput label="Max Discount %" value={formData.max_discount} onChangeText={(val: string) => handleChange('max_discount', val)} icon={Percent} keyboardType="numeric" />
-              
-              <View style={[styles.descriptionContainer, { backgroundColor: colors.white, borderWidth: 1, borderColor: colors.border_light, marginTop: spacing.md }]}>
-                <Text style={[styles.infoLabel, { marginBottom: 4, color: titleColor, fontSize: 10, textTransform: 'uppercase' }]}>Description</Text>
-                <TextInput
-                  style={[styles.descriptionText, { textAlignVertical: 'top', minHeight: 80, fontSize: 14, color: colors.text_primary, padding: 0 }]}
-                  value={formData.description}
-                  onChangeText={(val) => handleChange('description', val)}
-                  placeholder="Enter description..."
-                  multiline
-                  placeholderTextColor={colors.text_tertiary}
-                  autoCorrect={false}
+              <Controller control={control} name="item_name" render={({ field: { onChange, value } }) => (
+                <FormInput label="Item Name" value={value} onChangeText={onChange} icon={Package} placeholder="Required" />
+              )} />
+              <Controller control={control} name="item_code" render={({ field: { onChange, value } }) => (
+                <FormInput label="Item Code" value={value} onChangeText={onChange} icon={Barcode} placeholder="Required" editable={!isEdit} />
+              )} />
+              <Controller control={control} name="brand" render={({ field: { onChange, value } }) => (
+                <Selector 
+                  label="Brand" options={brands} value={value} onChange={onChange} onSearch={setBrandSearch}
+                  onEndReached={() => hasNextBrands && fetchNextBrands()} loadingNextPage={isFetchingBrands} icon={Bookmark}
                 />
-              </View>
+              )} />
+              <Controller control={control} name="item_group" render={({ field: { onChange, value } }) => (
+                <Selector 
+                  label="Item Group" options={itemGroups} value={value} onChange={onChange} onSearch={setGroupSearch}
+                  onEndReached={() => hasNextGroups && fetchNextGroups()} loadingNextPage={isFetchingGroups} icon={Layers}
+                />
+              )} />
+              <Controller control={control} name="gst_hsn_code" render={({ field: { onChange, value } }) => (
+                <Selector 
+                  label="HSN/SAC" options={hsnCodes} value={value} onChange={onChange} onSearch={setHsnSearch}
+                  onEndReached={() => hasNextHSN && fetchNextHSN()} loadingNextPage={isFetchingHSN} icon={Barcode}
+                />
+              )} />
+              <Controller control={control} name="description" render={({ field: { onChange, value } }) => (
+                <FormInput label="Description" value={value} onChangeText={onChange} multiline numberOfLines={3} icon={FileText} />
+              )} />
             </View>
           )}
 
           {section.id === 'settings' && (
             <View>
-              <BooleanField label="Disabled" value={formData.disabled} onChange={(val) => handleChange('disabled', val)} />
-              <BooleanField label="Maintain Stock" value={formData.is_stock_item} onChange={(val) => handleChange('is_stock_item', val)} />
-              <BooleanField label="Has Variants" value={formData.has_variants} onChange={(val) => handleChange('has_variants', val)} />
-              <BooleanField label="Allow Purchase" value={formData.is_purchase_item} onChange={(val) => handleChange('is_purchase_item', val)} />
-              <BooleanField label="Allow Sales" value={formData.is_sales_item} onChange={(val) => handleChange('is_sales_item', val)} />
-              <BooleanField label="Grant Commission" value={formData.grant_commission} onChange={(val) => handleChange('grant_commission', val)} />
+              <Controller control={control} name="disabled" render={({ field: { onChange, value } }) => (
+                <BooleanField label="Disabled" value={value} onChange={onChange} />
+              )} />
+              <Controller control={control} name="is_stock_item" render={({ field: { onChange, value } }) => (
+                <BooleanField label="Maintain Stock" value={value} onChange={onChange} />
+              )} />
+              <Controller control={control} name="is_purchase_item" render={({ field: { onChange, value } }) => (
+                <BooleanField label="Allow Purchase" value={value} onChange={onChange} />
+              )} />
+              <Controller control={control} name="is_sales_item" render={({ field: { onChange, value } }) => (
+                <BooleanField label="Allow Sales" value={value} onChange={onChange} />
+              )} />
             </View>
           )}
 
           {section.id === 'inventory' && (
             <View>
-              <FormInput label="Valuation Method" value={formData.valuation_method} onChangeText={(val: string) => handleChange('valuation_method', val)} icon={Activity} />
-              <FormInput label="Valuation Rate" value={formData.valuation_rate} onChangeText={(val: string) => handleChange('valuation_rate', val)} icon={Tag} keyboardType="numeric" />
-              
-              <View style={{ marginTop: spacing.lg, marginBottom: spacing.sm }}>
-                <Text style={[styles.cardTitle, { fontSize: 10, color: titleColor, letterSpacing: 2 }]}>Inventory Settings</Text>
-              </View>
-
-              <FormInput label="Shelf Life (Days)" value={formData.shelf_life_in_days} onChangeText={(val: string) => handleChange('shelf_life_in_days', val)} icon={Calendar} keyboardType="numeric" />
-              <FormInput label="End of Life" value={formData.end_of_life} onChangeText={(val: string) => handleChange('end_of_life', val)} icon={Calendar} placeholder="YYYY-MM-DD" />
-              <FormInput label="Material Req Type" value={formData.default_material_request_type} onChangeText={(val: string) => handleChange('default_material_request_type', val)} icon={Truck} />
-              <FormInput label="Warranty Period" value={formData.warranty_period} onChangeText={(val: string) => handleChange('warranty_period', val)} icon={ShieldCheck} keyboardType="numeric" />
-              <FormInput label="Weight per Unit" value={formData.weight_per_unit} onChangeText={(val: string) => handleChange('weight_per_unit', val)} icon={Weight} keyboardType="numeric" />
-              
-              <Selector 
-                label="Weight UOM"
-                options={uoms || []}
-                value={formData.weight_uom}
-                onChange={(val) => handleChange('weight_uom', val)}
-                onSearch={setUomSearch}
-                loading={loadingUoms}
-                icon={Scale}
-                placeholder="Select UOM"
-              />
-              
-              <View style={{ marginTop: spacing.md, paddingTop: spacing.md, borderTopWidth: 1, borderTopColor: colors.border_light }}>
-                <BooleanField label="Allow Negative Stock" value={formData.allow_negative_stock} onChange={(val) => handleChange('allow_negative_stock', val)} />
-                <BooleanField label="Has Batch No" value={formData.has_batch_no} onChange={(val) => handleChange('has_batch_no', val)} />
-                <BooleanField label="Has Serial No" value={formData.has_serial_no} onChange={(val) => handleChange('has_serial_no', val)} />
-              </View>
+              <Controller control={control} name="valuation_method" render={({ field: { onChange, value } }) => (
+                <FormInput label="Valuation Method" value={value} onChangeText={onChange} icon={Activity} />
+              )} />
+              <Controller control={control} name="valuation_rate" render={({ field: { onChange, value } }) => (
+                <FormInput label="Valuation Rate" value={String(value)} onChangeText={onChange} icon={Tag} keyboardType="numeric" />
+              )} />
+              <Controller control={control} name="has_serial_no" render={({ field: { onChange, value } }) => (
+                <BooleanField label="Has Serial No" value={value} onChange={onChange} />
+              )} />
+              <Controller control={control} name="has_batch_no" render={({ field: { onChange, value } }) => (
+                <BooleanField label="Has Batch No" value={value} onChange={onChange} />
+              )} />
             </View>
           )}
 
           {section.id === 'units' && (
             <View>
-              <Selector 
-                label="Default UOM" 
-                options={uoms || []} 
-                value={formData.stock_uom} 
-                onChange={(val) => handleChange('stock_uom', val)} 
-                onSearch={setUomSearch}
-                loading={loadingUoms}
-                icon={Box}
-                placeholder="Select UOM"
-              />
-
-              <View style={{ marginTop: spacing.lg }}>
-                <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
-                  <Text style={[styles.infoLabel, { color: titleColor, fontSize: 10, textTransform: 'uppercase', fontWeight: '900' }]}>Units of Measure</Text>
-                  <TouchableOpacity onPress={() => addRow('uoms', { uom: '', conversion_factor: 1 })}>
-                    <Plus size={16} color={titleColor} />
-                  </TouchableOpacity>
-                </View>
-                {formData.uoms?.map((u: any, i: number) => (
-                  <View key={i} style={{ marginBottom: spacing.sm, padding: spacing.md, backgroundColor: colors.blue_50, borderRadius: borderRadius.lg }}>
-                    <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: spacing.xs }}>
-                      <TouchableOpacity onPress={() => removeRow('uoms', i)}>
-                        <Trash2 size={16} color={colors.error} />
-                      </TouchableOpacity>
-                    </View>
-                    <Selector 
-                      placeholder="Select UOM"
-                      options={uoms || []}
-                      value={u.uom}
-                      onChange={(val) => handleArrayChange('uoms', i, 'uom', val)}
-                      onSearch={setUomSearch}
-                      loading={loadingUoms}
-                      icon={Scale}
-                    />
-                    <FormInput label="Conv Factor" value={u.conversion_factor} onChangeText={(val: string) => handleArrayChange('uoms', i, 'conversion_factor', val)} keyboardType="numeric" />
+              <Controller control={control} name="stock_uom" render={({ field: { onChange, value } }) => (
+                <Selector 
+                  label="Default UOM" options={uoms} value={value} onChange={onChange} onSearch={setUomSearch}
+                  onEndReached={() => hasNextUOMs && fetchNextUOMs()} loadingNextPage={isFetchingUOMs} icon={Ruler}
+                />
+              )} />
+              <TouchableOpacity onPress={() => appendUom({ uom: '', conversion_factor: 1 })} style={styles.addItemBtn}>
+                <Plus size={18} color={colors.primary} /><Text style={styles.addItemText}>Add Alternative UOM</Text>
+              </TouchableOpacity>
+              {uomFields.map((field, idx) => (
+                <View key={field.id} style={styles.itemCard}>
+                  <View style={styles.itemHeader}>
+                    <Text style={styles.itemLabel}>UOM #{idx + 1}</Text>
+                    <TouchableOpacity onPress={() => removeUom(idx)}><Trash2 size={16} color={colors.error} /></TouchableOpacity>
                   </View>
-                ))}
-              </View>
+                  <Controller control={control} name={`uoms.${idx}.uom`} render={({ field: { onChange, value } }) => (
+                    <Selector 
+                      label="Alternative UOM" options={uoms} value={value} onChange={onChange} onSearch={setUomSearch}
+                      onEndReached={() => hasNextUOMs && fetchNextUOMs()} loadingNextPage={isFetchingUOMs} icon={Scale}
+                    />
+                  )} />
+                  <Controller control={control} name={`uoms.${idx}.conversion_factor`} render={({ field: { onChange, value } }) => (
+                    <FormInput label="Conversion Factor" value={String(value)} onChangeText={onChange} keyboardType="numeric" icon={Activity} />
+                  )} />
+                </View>
+              ))}
             </View>
           )}
 
           {section.id === 'taxes' && (
             <View>
-              <View style={{ flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: spacing.sm }}>
-                <Text style={[styles.infoLabel, { color: colors.green_600, fontSize: 10, textTransform: 'uppercase', fontWeight: '900' }]}>Item Taxes</Text>
-                <TouchableOpacity onPress={() => addRow('taxes', { item_tax_template: '', valid_from: '' })}>
-                  <Plus size={16} color={colors.green_600} />
-                </TouchableOpacity>
-              </View>
-              {formData.taxes?.map((tax: any, idx: number) => (
-                <View key={idx} style={[styles.taxItem, { backgroundColor: colors.green_100, borderColor: colors.green_200 }]}>
-                  <View style={{ flexDirection: 'row', justifyContent: 'flex-end', marginBottom: spacing.xs }}>
-                    <TouchableOpacity onPress={() => removeRow('taxes', idx)}>
-                      <Trash2 size={16} color={colors.error} />
-                    </TouchableOpacity>
+              <TouchableOpacity onPress={() => appendTax({ item_tax_template: '' })} style={styles.addItemBtn}>
+                <Plus size={18} color={colors.primary} /><Text style={styles.addItemText}>Add Tax Template</Text>
+              </TouchableOpacity>
+              {taxFields.map((field, idx) => (
+                <View key={field.id} style={styles.itemCard}>
+                  <View style={styles.itemHeader}>
+                    <Text style={styles.itemLabel}>TAX #{idx + 1}</Text>
+                    <TouchableOpacity onPress={() => removeTax(idx)}><Trash2 size={16} color={colors.error} /></TouchableOpacity>
                   </View>
-                  
-                  <Selector 
-                    label="Tax Template"
-                    options={taxTemplates || []}
-                    value={tax.item_tax_template}
-                    onChange={(val) => handleArrayChange('taxes', idx, 'item_tax_template', val)}
-                    onSearch={setTaxSearch}
-                    loading={loadingTaxes}
-                    icon={Percent}
-                    placeholder="Select Template"
-                    displayField="title"
-                  />
-
-                  <FormInput label="Valid From" value={tax.valid_from} onChangeText={(val: string) => handleArrayChange('taxes', idx, 'valid_from', val)} placeholder="YYYY-MM-DD" icon={Calendar} />
+                  <Controller control={control} name={`taxes.${idx}.item_tax_template`} render={({ field: { onChange, value } }) => (
+                    <Selector 
+                      label="Tax Template" options={taxTemplates} displayField="title" value={value} onChange={onChange} onSearch={setTaxSearch}
+                      onEndReached={() => hasNextTaxes && fetchNextTaxes()} loadingNextPage={isFetchingTaxOptions} icon={Percent}
+                    />
+                  )} />
                 </View>
               ))}
             </View>
           )}
 
           {section.id === 'save' && (
-            <View style={{ flex: 1, justifyContent: 'center', alignItems: 'center', paddingTop: spacing.xxl }}>
-              <View style={{ backgroundColor: colors.blue_50, padding: spacing.xl, borderRadius: borderRadius.xxl, alignItems: 'center', width: '100%' }}>
-                <CheckCircle2 size={48} color={colors.primary} style={{ marginBottom: spacing.md }} />
-                <Text style={{ fontSize: 16, fontWeight: 'bold', color: colors.text_primary, textAlign: 'center', marginBottom: spacing.sm }}>Ready to Save?</Text>
-                <Text style={{ fontSize: 12, color: colors.text_secondary, textAlign: 'center', marginBottom: spacing.xl }}>Review your changes across the cards before submitting to ERPNext.</Text>
-                
-                <TouchableOpacity 
-                  style={{ 
-                    flexDirection: 'row', 
-                    alignItems: 'center', 
-                    justifyContent: 'center',
-                    gap: 8, 
-                    backgroundColor: colors.primary, 
-                    paddingHorizontal: 32, 
-                    paddingVertical: 16, 
-                    borderRadius: 30,
-                    width: '100%',
-                    ...shadow.medium
-                  }}
-                  onPress={handleSubmit}
-                  disabled={submitting}
-                >
-                  {submitting ? (
-                    <ActivityIndicator size="small" color={colors.white} />
-                  ) : (
-                    <>
-                      <Save size={20} color={colors.white} />
-                      <Text style={{ color: colors.white, fontSize: 16, fontWeight: 'bold' }}>{isEdit ? 'Update Item' : 'Create Item'}</Text>
-                    </>
-                  )}
-                </TouchableOpacity>
-              </View>
-            </View>
+            <SaveSection isEdit={isEdit} isPending={false} handleSubmit={handleSubmit(onSubmit)} title={isEdit ? "Update Item?" : "Create Item?"} />
           )}
         </ScrollView>
       </View>
     );
-  };
+  }, [control, brands, itemGroups, uoms, hsnCodes, taxTemplates, isEdit, handleSubmit, onSubmit, appendUom, removeUom, appendTax, removeTax, uomFields, taxFields, hasNextBrands, fetchNextBrands, isFetchingBrands, hasNextGroups, fetchNextGroups, isFetchingGroups, hasNextUOMs, fetchNextUOMs, isFetchingUOMs, hasNextHSN, fetchNextHSN, isFetchingHSN, hasNextTaxes, fetchNextTaxes, isFetchingTaxOptions]);
+
+  if (isEdit && loadingDetail) return <ModuleLayout title="Loading..." showBack><View style={detailStyles.loadingContainer}><ActivityIndicator size="large" color={colors.primary} /></View></ModuleLayout>;
+
+  const sectionsData = [
+    { id: 'details', title: 'Details', icon: ClipboardList, type: 'blue' },
+    { id: 'settings', title: 'Settings', icon: Settings, type: 'cyan' },
+    { id: 'inventory', title: 'Inventory', icon: Box, type: 'orange' },
+    { id: 'units', title: 'Units & UOM', icon: Ruler, type: 'purple' },
+    { id: 'taxes', title: 'Taxes', icon: Receipt, type: 'green' },
+    { id: 'save', title: 'Finish', icon: CheckCircle2, type: 'blue' },
+  ];
 
   return (
     <ModuleLayout title={isEdit ? `Edit: ${itemCode}` : "New Item"} showBack>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-      >
-        <View style={styles.container}>
-          {loading ? (
-            <View style={styles.loadingContainer}>
-              <ActivityIndicator size="large" color={colors.primary} />
-            </View>
-          ) : (
-            <FlatList
-              data={sections}
-              renderItem={renderSection}
-              keyExtractor={(s) => s.id}
-              horizontal
-              showsHorizontalScrollIndicator={false}
-              snapToAlignment="start"
-              decelerationRate="fast"
-              snapToInterval={SCREEN_WIDTH * 0.9 + spacing.xs * 2}
-              contentContainerStyle={styles.horizontalList}
-              keyboardShouldPersistTaps="handled"
-            />
-          )}
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
+        <View style={detailStyles.container}>
+          <FlatList 
+            data={sectionsData} 
+            renderItem={renderSection} 
+            keyExtractor={(s) => s.id} 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            snapToInterval={SCREEN_WIDTH * 0.9 + spacing.xs * 2} 
+            contentContainerStyle={detailStyles.horizontalList} 
+          />
         </View>
       </KeyboardAvoidingView>
     </ModuleLayout>
   );
 }
 
-const BooleanField = memo(({ label, value, onChange }: any) => (
-  <View style={styles.booleanRow}>
-    <Text style={styles.booleanLabel}>{label}</Text>
-    <Switch
-      value={!!value}
-      onValueChange={(val) => onChange(val ? 1 : 0)}
-      trackColor={{ false: colors.border, true: colors.primary }}
-      thumbColor={colors.white}
-    />
-  </View>
-));
+const styles = StyleSheet.create({
+  booleanRow: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingVertical: spacing.md, borderBottomWidth: 1, borderBottomColor: colors.border_light },
+  booleanLabel: { fontSize: 12, fontWeight: '600', color: colors.text_secondary, textTransform: 'uppercase' },
+  addItemBtn: { flexDirection: 'row', alignItems: 'center', gap: 8, backgroundColor: colors.blue_50, padding: 12, borderRadius: 12, marginVertical: 16, justifyContent: 'center' },
+  addItemText: { color: colors.primary, fontWeight: 'bold' },
+  itemCard: { backgroundColor: colors.background, padding: 16, borderRadius: 16, marginBottom: 16, borderWidth: 1, borderColor: colors.border_light },
+  itemHeader: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 12 },
+  itemLabel: { fontSize: 12, fontWeight: 'bold', color: colors.text_tertiary },
+});

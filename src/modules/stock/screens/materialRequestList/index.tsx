@@ -1,11 +1,13 @@
 import React, { useState, useCallback, useMemo } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { ClipboardList, ChevronRight, Clock, Box } from 'lucide-react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+
 import { ModuleLayout } from '../../../../core/components/ModuleLayout';
 import { FilterHeader, SelectorFilterConfig } from '../../../../core/components/FilterHeader';
-import { useNavigation } from '@react-navigation/native';
 import { useDebounce } from '../../../../core/utils/debounce';
-import { useMaterialRequests, useMaterialRequestMeta } from '../../hooks/materialRequestQueries';
+import { useMaterialRequests } from '../../hooks/materialRequestQueries';
+import { companyService } from '../../../../core/services/companyService';
 import { styles } from '../itemList/styles';
 import { colors, spacing } from '../../../../core/theme';
 
@@ -29,24 +31,43 @@ const TYPE_OPTIONS = [
 ];
 
 export function MaterialRequestList() {
+  const navigation = useNavigation<any>();
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedStatus, setSelectedStatus] = useState('All');
   const [selectedType, setSelectedType] = useState('All');
+  const [company, setCompany] = useState<string>('');
 
   const debouncedSearch = useDebounce(searchQuery);
-  const navigation = useNavigation<any>();
 
-  // Fetch Requests via React Query
+  // Load company on focus to handle company changes
+  useFocusEffect(
+    useCallback(() => {
+      companyService.getSelectedCompany().then(c => {
+        if (c?.name) setCompany(c.name);
+      });
+    }, [])
+  );
+
+  // Fetch Requests via React Query (Infinite Query)
   const { 
-    data: requests, 
+    data, 
     isLoading, 
     isRefetching, 
-    refetch 
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
   } = useMaterialRequests({
+    company,
     search: debouncedSearch,
     status: selectedStatus === 'All' ? '' : selectedStatus,
     type: selectedType === 'All' ? '' : selectedType
   });
+
+  // Flatten infinite query pages into a single array
+  const requests = useMemo(() => {
+    return data?.pages?.flat() || [];
+  }, [data]);
 
   const getStatusColor = useCallback((status: string) => {
     switch (status) {
@@ -122,6 +143,15 @@ export function MaterialRequestList() {
     );
   }, [navigation, getStatusColor]);
 
+  const renderFooter = () => {
+    if (!isFetchingNextPage) return null;
+    return (
+      <View style={{ paddingVertical: 20 }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  };
+
   return (
     <ModuleLayout title="Material Requests" showBack>
       <View style={styles.container}>
@@ -141,7 +171,7 @@ export function MaterialRequestList() {
           </View>
         ) : (
           <FlatList
-            data={requests || []}
+            data={requests}
             renderItem={renderItem}
             keyExtractor={(item) => item.name}
             contentContainerStyle={styles.listContent}
@@ -159,6 +189,9 @@ export function MaterialRequestList() {
                 <Text style={styles.emptyText}>No requests found</Text>
               </View>
             }
+            onEndReached={() => hasNextPage && fetchNextPage()}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={renderFooter}
           />
         )}
       </View>

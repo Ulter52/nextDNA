@@ -1,7 +1,7 @@
 export type RootStackParamList = {
   Auth: undefined;
   Main: undefined;
-  User: { screen: keyof UserStackParamList };
+  User: { screen: keyof UserStackParamList; params?: any };
 };
 
 export type AuthStackParamList = {
@@ -21,6 +21,7 @@ export type MoreStackParamList = {
   FinancialReports: undefined;
   Projects: { screen: keyof ProjectsStackParamList };
   Buying: { screen: keyof BuyingStackParamList };
+  User: { screen: keyof UserStackParamList; params?: any };
 };
 
 export type ProjectsStackParamList = {
@@ -60,6 +61,9 @@ export type SellingStackParamList = {
 
 export type UserStackParamList = {
   Profile: undefined;
+  UserList: undefined;
+  UserDetail: { email: string };
+  UserEdit: { email: string };
 };
 
 export type ReportsStackParamList = {

@@ -19,7 +19,6 @@ export function CustomerList() {
 
   const navigation = useNavigation<NativeStackNavigationProp<SellingStackParamList>>();
 
-  // Handle Search Debounce
   useEffect(() => {
     const timer = setTimeout(() => setDebouncedSearch(searchQuery), 500);
     return () => clearTimeout(timer);
@@ -35,20 +34,36 @@ export function CustomerList() {
     isFetchingNextPage
   } = useCustomers(debouncedSearch, { customer_group: selectedGroup === 'All' ? undefined : selectedGroup });
 
-  const { data: groups } = useCustomerGroups();
+  const { data: groupsRes } = useCustomerGroups();
 
   useEffect(() => {
     AsyncStorage.getItem('erp_user').then(setUser);
   }, []);
 
-  const customers = useMemo(() => {
-    return data?.pages.flatMap(page => page) || [];
-  }, [data]);
+  const flattenPages = (res: any) => {
+    if (!res || !res.pages || !Array.isArray(res.pages)) return [];
+    let all: any[] = [];
+    for (let i = 0; i < res.pages.length; i++) {
+      const page = res.pages[i];
+      if (Array.isArray(page)) {
+        for (let j = 0; j < page.length; j++) {
+          all.push(page[j]);
+        }
+      }
+    }
+    return all;
+  };
 
-  const groupOptions = useMemo(() => [
-    { name: 'All Groups', value: 'All' },
-    ...(groups || []).map((g: any) => ({ name: g.name, value: g.name }))
-  ], [groups]);
+  const customers = useMemo(() => flattenPages(data), [data]);
+
+  const groupOptions = useMemo(() => {
+    const list = flattenPages(groupsRes);
+    const options = [{ name: 'All Groups', value: 'All' }];
+    for (let i = 0; i < list.length; i++) {
+      options.push({ name: list[i].name, value: list[i].name });
+    }
+    return options;
+  }, [groupsRes]);
 
   const selectorFilters: SelectorFilterConfig[] = useMemo(() => [
     {
@@ -61,13 +76,8 @@ export function CustomerList() {
     }
   ], [selectedGroup, groupOptions]);
 
-  const handleRefresh = useCallback(() => {
-    refetch();
-  }, [refetch]);
-
-  const handleAdd = useCallback(() => {
-    navigation.navigate('NewCustomer');
-  }, [navigation]);
+  const handleRefresh = useCallback(() => refetch(), [refetch]);
+  const handleAdd = useCallback(() => navigation.navigate('NewCustomer'), [navigation]);
 
   const renderItem = useCallback(({ item }: any) => (
     <TouchableOpacity 
@@ -83,78 +93,41 @@ export function CustomerList() {
               style={styles.avatarImage} 
             />
           ) : (
-            <Text style={styles.avatarText}>
-              {(item.customer_name || item.name || '?').charAt(0).toUpperCase()}
-            </Text>
+            <Text style={styles.avatarText}>{(item.customer_name || item.name || '?').charAt(0).toUpperCase()}</Text>
           )}
         </View>
         <View style={styles.customerInfo}>
           <Text style={styles.customerName} numberOfLines={1}>{item.customer_name}</Text>
-          <Text style={styles.customerDetails} numberOfLines={1}>
-            {item.customer_group} • {item.territory || 'No Territory'}
-          </Text>
+          <Text style={styles.customerDetails} numberOfLines={1}>{item.customer_group} • {item.territory || 'No Territory'}</Text>
         </View>
       </View>
       <ChevronRight size={18} color={colors.text_tertiary} />
     </TouchableOpacity>
   ), [navigation]);
 
-  const renderFooter = () => {
-    if (!isFetchingNextPage) return <View style={{ height: spacing.xxl }} />;
-    return (
-      <View style={styles.loaderFooter}>
-        <ActivityIndicator color={colors.primary} />
-      </View>
-    );
-  };
-
-  const renderEmpty = () => {
-    if (isLoading) return null;
-    return (
-      <View style={styles.emptyContainer}>
-        <View style={styles.emptyIconContainer}>
-          <UserPlus size={32} color={colors.text_tertiary} />
-        </View>
-        <Text style={styles.emptyTitle}>No Customers Found</Text>
-        <Text style={styles.emptySubtitle}>Try adjusting your search or add a new customer.</Text>
-      </View>
-    );
-  };
+  const renderFooter = () => isFetchingNextPage ? (
+    <View style={styles.loaderFooter}><ActivityIndicator color={colors.primary} /></View>
+  ) : <View style={{ height: spacing.xxl }} />;
 
   return (
     <ModuleLayout title="Customers" user={user} showBack={true}>
       <FilterHeader 
-        searchQuery={searchQuery}
-        onSearchChange={setSearchQuery}
-        onRefresh={handleRefresh}
-        onAdd={handleAdd}
-        placeholder="Search by name..."
-        selectorFilters={selectorFilters}
+        searchQuery={searchQuery} onSearchChange={setSearchQuery}
+        onRefresh={handleRefresh} onAdd={handleAdd}
+        placeholder="Search by name..." selectorFilters={selectorFilters}
       />
-      
       {isLoading && !isRefetching ? (
-        <View style={styles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-          <Text style={styles.loadingText}>Loading customers...</Text>
-        </View>
+        <View style={styles.loadingContainer}><ActivityIndicator size="large" color={colors.primary} /><Text style={styles.loadingText}>Loading customers...</Text></View>
       ) : (
         <FlatList
           data={customers}
           keyExtractor={(item) => item.name}
           renderItem={renderItem}
           contentContainerStyle={styles.listContent}
-          showsVerticalScrollIndicator={false}
-          onEndReached={() => {
-            if (hasNextPage && !isFetchingNextPage) {
-              fetchNextPage();
-            }
-          }}
+          onEndReached={() => hasNextPage && !isFetchingNextPage && fetchNextPage()}
           onEndReachedThreshold={0.5}
           ListFooterComponent={renderFooter}
-          ListEmptyComponent={renderEmpty}
-          refreshControl={
-            <RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} tintColor={colors.primary} />
-          }
+          refreshControl={<RefreshControl refreshing={isRefetching} onRefresh={handleRefresh} tintColor={colors.primary} />}
         />
       )}
     </ModuleLayout>

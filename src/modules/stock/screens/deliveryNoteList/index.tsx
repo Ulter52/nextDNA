@@ -1,7 +1,7 @@
 import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { Truck, ChevronRight } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 
 import { ModuleLayout } from '@core/components/ModuleLayout';
 import { FilterHeader, FilterOption } from '@core/components/FilterHeader';
@@ -10,6 +10,7 @@ import { colors } from '@core/theme';
 import { styles } from '../itemList/styles';
 
 import { useDeliveryNotes } from '../../hooks/deliveryNoteQueries';
+import { companyService } from '@core/services/companyService';
 
 const STATUS_FILTERS: FilterOption[] = [
   { label: 'All', value: 'All' },
@@ -55,16 +56,34 @@ export function DeliveryNoteList() {
   const [searchQuery, setSearchQuery] = useState('');
   const debouncedSearch = useDebounce(searchQuery);
   const [statusFilter, setStatusFilter] = useState('All');
+  const [company, setCompany] = useState<string>('');
+
+  // Load company on focus to handle company changes
+  useFocusEffect(
+    useCallback(() => {
+      companyService.getSelectedCompany().then(c => {
+        if (c?.name) setCompany(c.name);
+      });
+    }, [])
+  );
 
   const { 
-    data: deliveryNotes, 
+    data, 
     isLoading, 
     isRefetching, 
-    refetch 
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
   } = useDeliveryNotes({ 
+    company,
     search: debouncedSearch, 
     status: statusFilter 
   });
+
+  const deliveryNotes = useMemo(() => {
+    return data?.pages?.flat() || [];
+  }, [data]);
 
   const getStatusColor = useCallback((status: string) => {
     switch (status) {
@@ -100,6 +119,15 @@ export function DeliveryNoteList() {
     </View>
   ), []);
 
+  const renderFooter = () => {
+    if (!isFetchingNextPage) return null;
+    return (
+      <View style={{ paddingVertical: 20 }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  };
+
   return (
     <ModuleLayout title="Delivery Notes" showBack>
       <View style={styles.container}>
@@ -133,6 +161,9 @@ export function DeliveryNoteList() {
               />
             }
             ListEmptyComponent={listEmptyComponent}
+            onEndReached={() => hasNextPage && fetchNextPage()}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={renderFooter}
           />
         )}
       </View>

@@ -1,7 +1,7 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useCallback } from 'react';
 import { View, Text, TouchableOpacity, StyleSheet } from 'react-native';
-import { Bell, Search, ArrowLeft, ChevronDown, Building2, LucideIcon } from 'lucide-react-native';
-import { useNavigation } from '@react-navigation/native';
+import { Bell, Search, ArrowLeft, ChevronDown, Building2, LucideIcon, User } from 'lucide-react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { colors, spacing, borderRadius, typography, shadow } from '../../core/theme';
 import { CompanyPickerModal } from '../../core/components/CompanyPickerModal';
 import { SearchModal } from '../../core/components/SearchModal';
@@ -23,7 +23,14 @@ interface HeaderProps {
   extraAction?: HeaderAction;
 }
 
-export function Header({ title, onBack, hideRightIcons = false, extraAction }: HeaderProps) {
+export function Header({ 
+  title, 
+  user, 
+  onProfileClick, 
+  onBack, 
+  hideRightIcons = false, 
+  extraAction 
+}: HeaderProps) {
   const navigation = useNavigation<any>();
   const [companyModalVisible, setCompanyModalVisible] = useState(false);
   const [searchModalVisible, setSearchModalVisible] = useState(false);
@@ -31,28 +38,39 @@ export function Header({ title, onBack, hideRightIcons = false, extraAction }: H
   const [selectedCompany, setSelectedCompany] = useState<Company | null>(null);
   const [unreadCount, setUnreadCount] = useState(0);
 
-  useEffect(() => {
-    let isMounted = true;
-    
-    const loadInitialData = async () => {
-      const [company, count] = await Promise.all([
-        companyService.ensureCompanySelected(),
-        notificationService.getUnreadCount()
-      ]);
-      
-      if (isMounted) {
-        setSelectedCompany(company);
-        setUnreadCount(count);
-      }
-    };
+  const loadData = useCallback(async () => {
+    try {
+      const company = await companyService.ensureCompanySelected();
+      setSelectedCompany(company);
+    } catch (err) {
+      console.error('[Header] Failed to load company', err);
+    }
 
-    loadInitialData();
-    return () => { isMounted = false; };
+    try {
+      const count = await notificationService.getUnreadCount();
+      setUnreadCount(count || 0);
+    } catch (err) {
+      console.error('[Header] Failed to load notifications', err);
+    }
   }, []);
+
+  // Refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      loadData();
+    }, [loadData])
+  );
 
   const handleCompanySelect = async (company: Company) => {
     await companyService.setSelectedCompany(company);
     setSelectedCompany(company);
+  };
+
+  const getAbbr = () => {
+    if (selectedCompany?.abbr) return selectedCompany.abbr;
+    if (selectedCompany?.company_name) return selectedCompany.company_name.substring(0, 2).toUpperCase();
+    if (selectedCompany?.name) return selectedCompany.name.substring(0, 2).toUpperCase();
+    return '??';
   };
 
   return (
@@ -77,6 +95,7 @@ export function Header({ title, onBack, hideRightIcons = false, extraAction }: H
               <extraAction.icon size={20} color={colors.primary} />
             </TouchableOpacity>
           )}
+          
           <TouchableOpacity 
             style={styles.iconButton} 
             activeOpacity={0.7}
@@ -84,6 +103,7 @@ export function Header({ title, onBack, hideRightIcons = false, extraAction }: H
           >
             <Search size={20} color={colors.text_secondary} />
           </TouchableOpacity>
+
           <TouchableOpacity 
             style={styles.iconButton} 
             activeOpacity={0.7}
@@ -92,6 +112,16 @@ export function Header({ title, onBack, hideRightIcons = false, extraAction }: H
             <Bell size={20} color={colors.text_secondary} />
             {unreadCount > 0 && <View style={styles.notificationDot} />}
           </TouchableOpacity>
+
+          {onProfileClick && (
+             <TouchableOpacity 
+                style={styles.iconButton} 
+                activeOpacity={0.7}
+                onPress={onProfileClick}
+              >
+                <User size={20} color={colors.text_secondary} />
+              </TouchableOpacity>
+          )}
           
           <TouchableOpacity 
             style={styles.companySelector} 
@@ -101,7 +131,7 @@ export function Header({ title, onBack, hideRightIcons = false, extraAction }: H
             <View style={styles.companyIcon}>
               <Building2 size={14} color={colors.white} />
             </View>
-            <Text style={styles.companyAbbr} >{selectedCompany?.abbr || '??'}</Text>
+            <Text style={styles.companyAbbr}>{getAbbr()}</Text>
             <ChevronDown size={14} color={colors.white} strokeWidth={3} />
           </TouchableOpacity>
         </View>

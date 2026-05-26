@@ -182,8 +182,11 @@ export function NewSalesOrder() {
     if (!res?.pages || !Array.isArray(res.pages)) return [];
     let all: any[] = [];
     for (let i = 0; i < res.pages.length; i++) {
-      if (Array.isArray(res.pages[i])) {
-        all = all.concat(res.pages[i]);
+      const page = res.pages[i];
+      if (Array.isArray(page)) {
+        for (let j = 0; j < page.length; j++) {
+          all.push(page[j]);
+        }
       }
     }
     return all;

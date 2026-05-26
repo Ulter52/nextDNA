@@ -24,33 +24,43 @@ export function ItemList() {
     companyService.getSelectedCompany().then(c => setCompanyName(c?.name || ''));
   }, []);
 
-  // Fetch Metadata with React Query
-  const { data: itemGroups } = useItemGroups();
-  const { data: brands } = useBrands();
+  // Fetch Metadata with React Query (Infinite Queries)
+  const { data: itemGroupsRes } = useItemGroups();
+  const { data: brandsRes } = useBrands();
 
-  // Memoized options for Selectors
-  const groupOptions = useMemo(() => [
-    { name: 'All Groups', value: 'All' },
-    ...(itemGroups || []).map((g: any) => ({ name: g.name, value: g.name }))
-  ], [itemGroups]);
+  // Memoized options for Selectors - Flattening InfiniteQuery pages
+  const groupOptions = useMemo(() => {
+    const flatGroups = itemGroupsRes?.pages.flat() || [];
+    return [
+      { name: 'All Groups', value: 'All' },
+      ...flatGroups.map((g: any) => ({ name: g.name, value: g.name }))
+    ];
+  }, [itemGroupsRes]);
 
-  const brandOptions = useMemo(() => [
-    { name: 'All Brands', value: 'All' },
-    ...(brands || []).map((b: any) => ({ name: b.name, value: b.name }))
-  ], [brands]);
+  const brandOptions = useMemo(() => {
+    const flatBrands = brandsRes?.pages.flat() || [];
+    return [
+      { name: 'All Brands', value: 'All' },
+      ...flatBrands.map((b: any) => ({ name: b.name, value: b.name }))
+    ];
+  }, [brandsRes]);
 
   // Fetch Items via React Query
-  const { 
-    data: itemsRes, 
-    isLoading, 
-    isRefetching, 
-    refetch 
-  } = useItems(debouncedSearch, { 
-    item_group: selectedGroup === 'All' ? '' : selectedGroup, 
-    brand: selectedBrand === 'All' ? '' : selectedBrand 
+  const {
+    data: itemsRes,
+    isLoading,
+    isRefetching,
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
+  } = useItems(debouncedSearch, {
+    item_group: selectedGroup === 'All' ? '' : selectedGroup,
+    brand: selectedBrand === 'All' ? '' : selectedBrand
   });
 
-  const items = itemsRes?.data || [];
+  // Flatten items from all pages
+  const items = useMemo(() => itemsRes?.pages.flat() || [], [itemsRes]);
 
   // Memoized Filter Configuration for Core Header
   const selectorFilters: SelectorFilterConfig[] = useMemo(() => [
@@ -73,8 +83,8 @@ export function ItemList() {
   ], [selectedGroup, selectedBrand, groupOptions, brandOptions]);
 
   const renderItem = useCallback(({ item }: { item: any }) => (
-    <TouchableOpacity 
-      style={styles.itemCard} 
+    <TouchableOpacity
+      style={styles.itemCard}
       activeOpacity={0.7}
       onPress={() => navigation.navigate('ItemDetail', { itemCode: item.name })}
     >
@@ -127,6 +137,19 @@ export function ItemList() {
                 onRefresh={refetch} 
                 tintColor={colors.primary} 
               />
+            }
+            onEndReached={() => {
+              if (hasNextPage && !isFetchingNextPage) {
+                fetchNextPage();
+              }
+            }}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={
+              isFetchingNextPage ? (
+                <View style={styles.loaderFooter}>
+                  <ActivityIndicator size="small" color={colors.primary} />
+                </View>
+              ) : null
             }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>

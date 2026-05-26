@@ -181,8 +181,11 @@ export function NewSalesInvoice() {
     if (!res?.pages || !Array.isArray(res.pages)) return [];
     let all: any[] = [];
     for (let i = 0; i < res.pages.length; i++) {
-      if (Array.isArray(res.pages[i])) {
-        all = all.concat(res.pages[i]);
+      const page = res.pages[i];
+      if (Array.isArray(page)) {
+        for (let j = 0; j < page.length; j++) {
+          all.push(page[j]);
+        }
       }
     }
     return all;
@@ -355,13 +358,25 @@ export function NewSalesInvoice() {
 
   if (isEdit && loadingDetail) return <ModuleLayout title="Loading..." showBack><View style={detailStyles.loadingContainer}><ActivityIndicator size="large" color={colors.primary} /></View></ModuleLayout>;
 
+  const sectionsData = [
+    { id: 'basic', title: 'Basic Info', icon: FileText, type: 'blue' },
+    { id: 'items', title: 'Items List', icon: Package, type: 'orange' },
+    { id: 'taxes', title: 'Taxes & Terms', icon: Tag, type: 'green' },
+    { id: 'save', title: 'Finish', icon: CheckCircle2, type: 'blue' }
+  ];
+
   return (
     <ModuleLayout title={isEdit ? "Edit Invoice" : "New Invoice"} showBack>
       <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <View style={detailStyles.container}>
           <FlatList 
-            data={[{ id: 'basic', title: 'Basic Info', icon: FileText, type: 'blue' }, { id: 'items', title: 'Items List', icon: Package, type: 'orange' }, { id: 'taxes', title: 'Taxes & Terms', icon: Tag, type: 'green' }, { id: 'save', title: 'Finish', icon: CheckCircle2, type: 'blue' }]} 
-            renderItem={renderSection} keyExtractor={(s) => s.id} horizontal showsHorizontalScrollIndicator={false} snapToInterval={SCREEN_WIDTH * 0.9 + spacing.xs * 2} contentContainerStyle={detailStyles.horizontalList} 
+            data={sectionsData} 
+            renderItem={renderSection} 
+            keyExtractor={(s) => s.id} 
+            horizontal 
+            showsHorizontalScrollIndicator={false} 
+            snapToInterval={SCREEN_WIDTH * 0.9 + spacing.xs * 2} 
+            contentContainerStyle={detailStyles.horizontalList} 
           />
         </View>
       </KeyboardAvoidingView>

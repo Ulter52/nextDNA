@@ -122,8 +122,19 @@ export const styles = StyleSheet.create({
     color: colors.text_tertiary,
     fontWeight: typography.weights.bold,
   },
-  loadingContainer: {
+  loadingWrapper: {
+    flex: 1,
+    alignItems: 'center',
+    justifyContent: 'center',
     padding: spacing.xxl,
+  },
+  loadingText: {
+    marginTop: spacing.md,
+    fontSize: typography.sizes.sm,
+    color: colors.text_tertiary,
+  },
+  loaderFooter: {
+    paddingVertical: spacing.md,
     alignItems: 'center',
   },
   emptyContainer: {

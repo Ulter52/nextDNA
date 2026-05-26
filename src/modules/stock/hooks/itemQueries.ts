@@ -13,8 +13,12 @@ export const useItems = (search: string, filters: any = {}) => {
   return useInfiniteQuery({
     queryKey: keys.list(search, filters),
     queryFn: async ({ pageParam = 0 }) => {
-      const data = await stockApi.getItems(50, search, filters, pageParam as number);
-      return Array.isArray(data) ? data : [];
+      try {
+        const res = await stockApi.getItems(50, search, filters, pageParam as number);
+        return Array.isArray(res?.data) ? res.data : [];
+      } catch (e) {
+        return [];
+      }
     },
     getNextPageParam: (lastPage, allPages) => {
       const currentLastPage = Array.isArray(lastPage) ? lastPage : [];

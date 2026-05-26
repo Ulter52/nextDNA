@@ -1,27 +1,27 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { stockApi } from '../services/stockApi';
-import { companyService } from '@core/services/companyService';
 import { fetchResource, updateResource, createResource } from '@core/api/frappeApiHelpers';
 
 const keys = {
   all: ['materialRequests'] as const,
-  list: (params: any) => [...keys.all, 'list', params] as const,
+  list: (company: string, params: any) => [...keys.all, 'list', company, params] as const,
   detail: (id: string) => [...keys.all, 'detail', id] as const,
   meta: () => [...keys.all, 'metadata'] as const,
 };
 
 export const useMaterialRequests = (params: {
+  company: string;
   search: string;
   status: string;
   type: string;
 }) => {
   return useInfiniteQuery({
-    queryKey: keys.list(params),
+    queryKey: keys.list(params.company, { search: params.search, status: params.status, type: params.type }),
     queryFn: async ({ pageParam = 0 }) => {
+      if (!params.company) return [];
       try {
-        const company = await companyService.getSelectedCompany();
         const data = await stockApi.getMaterialRequests(
-          company?.name || '',
+          params.company,
           params.search,
           params.status,
           params.type,
@@ -39,6 +39,7 @@ export const useMaterialRequests = (params: {
       return (allPages?.length || 0) * 20;
     },
     initialPageParam: 0,
+    enabled: !!params.company,
     staleTime: 2 * 60 * 1000,
   });
 };

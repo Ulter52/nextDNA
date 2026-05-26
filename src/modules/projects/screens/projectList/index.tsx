@@ -1,10 +1,10 @@
-import React, { useState } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl, StyleSheet } from 'react-native';
 import { Calendar, LayoutGrid, CheckCircle2, Clock } from 'lucide-react-native';
 import { ModuleLayout } from '../../../../core/components/ModuleLayout';
 import { useProjects } from '../../hooks/projectQueries';
 import { colors, spacing, borderRadius, shadow, typography } from '../../../../core/theme';
-import { useNavigation } from '@react-navigation/native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
 import { FilterHeader } from '../../../../core/components/FilterHeader';
 import { useDebounce } from '../../../../core/utils/debounce';
 
@@ -14,10 +14,30 @@ export function ProjectList() {
   const [status, setStatus] = useState('All');
   const debouncedSearch = useDebounce(search);
 
-  const { data: projects, isLoading, refetch, isRefetching } = useProjects({ 
+  const { 
+    data, 
+    isLoading, 
+    refetch, 
+    isRefetching,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
+  } = useProjects({ 
     search: debouncedSearch, 
     status 
   });
+
+  // Flatten infinite query pages into a single array
+  const projects = useMemo(() => {
+    return data?.pages?.flat() || [];
+  }, [data]);
+
+  // Refresh data when screen comes into focus
+  useFocusEffect(
+    useCallback(() => {
+      refetch();
+    }, [refetch])
+  );
 
   const statusFilters = [
     { label: 'All', value: 'All' },
@@ -62,6 +82,15 @@ export function ProjectList() {
     );
   };
 
+  const renderFooter = () => {
+    if (!isFetchingNextPage) return null;
+    return (
+      <View style={{ paddingVertical: spacing.md }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  };
+
   return (
     <ModuleLayout title="Projects" showBack>
       <View style={styles.container}>
@@ -76,7 +105,7 @@ export function ProjectList() {
           placeholder="Search projects..."
         />
 
-        {isLoading && !projects ? (
+        {isLoading && !data ? (
           <View style={styles.center}>
             <ActivityIndicator size="large" color={colors.primary} />
           </View>
@@ -91,9 +120,13 @@ export function ProjectList() {
             }
             ListEmptyComponent={
               <View style={styles.emptyContainer}>
+                <LayoutGrid size={48} color={colors.border} />
                 <Text style={styles.emptyText}>No projects found</Text>
               </View>
             }
+            onEndReached={() => hasNextPage && fetchNextPage()}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={renderFooter}
           />
         )}
       </View>
@@ -149,6 +182,6 @@ const styles = StyleSheet.create({
   progressBarBg: { flex: 1, height: 6, backgroundColor: colors.border_light, borderRadius: 3, overflow: 'hidden' },
   progressBarFill: { height: '100%', borderRadius: 3 },
   progressText: { fontSize: 12, fontWeight: 'bold', color: colors.text_primary, minWidth: 35 },
-  emptyContainer: { padding: spacing.xxl, alignItems: 'center' },
-  emptyText: { color: colors.text_tertiary }
+  emptyContainer: { padding: spacing.xxl, alignItems: 'center', gap: spacing.md },
+  emptyText: { color: colors.text_tertiary, fontSize: 16, fontWeight: '600' }
 });

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
+import React, { useState, useEffect, useCallback, memo, useMemo } from 'react';
 import {
   View,
   Text,
@@ -116,7 +116,14 @@ export function ProjectEdit() {
   const { data: project, isLoading: loadingDetail } = useProjectDetail(
     projectId || ''
   );
-  const { data: projectTypes, isLoading: loadingTypes } = useProjectTypes();
+  
+  // projectTypes is an InfiniteData object
+  const { data: projectTypesData, isLoading: loadingTypes } = useProjectTypes();
+  
+  const projectTypes = useMemo(() => {
+    return projectTypesData?.pages?.flat() || [];
+  }, [projectTypesData]);
+
   const saveMutation = useSaveProject();
 
   useEffect(() => {
@@ -199,7 +206,7 @@ export function ProjectEdit() {
 
             <Selector
               label="Project Type"
-              options={projectTypes || []}
+              options={projectTypes}
               value={formData.project_type}
               onChange={(val) => handleChange('project_type', val)}
               loading={loadingTypes}

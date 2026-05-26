@@ -15,6 +15,7 @@ import {
   useDeliveryNoteDetail, 
   useSaveDeliveryNote 
 } from '../../hooks/deliveryNoteQueries';
+import { useWarehouses } from '../../hooks/itemQueries';
 import { useSellingItems, useProjects, useCostCenters, useTaxCategories, useTaxTemplates } from '../../../selling/hooks/sellingQueries';
 import { useCustomers } from '../../../selling/hooks/customerQueries';
 import { stockApi } from '../../services/stockApi';

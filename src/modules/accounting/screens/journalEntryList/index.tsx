@@ -1,10 +1,11 @@
-import React, { useState, useRef, useMemo } from 'react';
+import React, { useState, useMemo, useCallback } from 'react';
 import { View, Text, FlatList, TouchableOpacity, ActivityIndicator, RefreshControl } from 'react-native';
 import { FileText, Tag, Wallet, Clock, CheckCircle2, XCircle } from 'lucide-react-native';
+import { useNavigation, useFocusEffect } from '@react-navigation/native';
+
 import { ModuleLayout } from '../../../../core/components/ModuleLayout';
 import { FilterHeader, SelectorFilterConfig } from '../../../../core/components/FilterHeader';
 import { colors } from '../../../../core/theme';
-import { useNavigation } from '@react-navigation/native';
 import { useDebounce } from '../../../../core/utils/debounce';
 import { useJournalEntries, useJournalEntryFilters } from '../../hooks/journalEntryQueries';
 import { formatCurrency } from '../../../../core/utils/formatters';
@@ -45,32 +46,42 @@ export function JournalEntryList() {
   const [searchQuery, setSearchQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('All');
   const [voucherType, setVoucherType] = useState('All');
+  const [companyName, setCompanyName] = useState('');
   
   const debouncedSearch = useDebounce(searchQuery);
   const navigation = useNavigation<any>();
 
-  // Fetch company (Ideally this would also be a hook in a real app)
-  const [companyName, setCompanyName] = useState('DNA Retail Enterprises');
-  React.useEffect(() => {
-    companyService.getSelectedCompany().then(c => {
-      if (c?.name) setCompanyName(c.name);
-    });
-  }, []);
+  // Fetch company on focus to handle company changes
+  useFocusEffect(
+    useCallback(() => {
+      companyService.getSelectedCompany().then(c => {
+        if (c?.name) setCompanyName(c.name);
+      });
+    }, [])
+  );
 
   const { data: filtersData } = useJournalEntryFilters();
   const voucherTypeOptions = useMemo(() => filtersData?.voucherTypes || [], [filtersData]);
 
   const { 
-    data: entries, 
+    data, 
     isLoading, 
     isRefetching, 
-    refetch 
+    refetch,
+    fetchNextPage,
+    hasNextPage,
+    isFetchingNextPage
   } = useJournalEntries({
     company: companyName,
     search: debouncedSearch,
     status: statusFilter,
     voucherType: voucherType
   });
+
+  // Flatten infinite query pages
+  const entriesList = useMemo(() => {
+    return data?.pages?.flat() || [];
+  }, [data]);
 
   const selectorFilters: SelectorFilterConfig[] = useMemo(() => [
     {
@@ -110,7 +121,7 @@ export function JournalEntryList() {
           <View style={styles.infoContainer}>
             <View style={styles.row}>
               <Text style={styles.voucherType} numberOfLines={1}>{item.voucher_type || 'Journal Entry'}</Text>
-              <Text style={styles.amount}>{formatCurrency(item.total_debit, 'INR')}</Text>
+              <Text style={styles.amount}>{formatCurrency(item.total_debit || 0, 'INR')}</Text>
             </View>
             
             <View style={styles.row}>
@@ -128,6 +139,15 @@ export function JournalEntryList() {
       </TouchableOpacity>
     );
   }, [navigation]);
+
+  const renderFooter = () => {
+    if (!isFetchingNextPage) return null;
+    return (
+      <View style={{ paddingVertical: 20 }}>
+        <ActivityIndicator color={colors.primary} />
+      </View>
+    );
+  };
 
   return (
     <ModuleLayout title="Journal Entries" showBack>
@@ -147,7 +167,7 @@ export function JournalEntryList() {
           </View>
         ) : (
           <FlatList
-            data={entries?.data || []}
+            data={entriesList}
             renderItem={renderItem}
             keyExtractor={(item) => item.name}
             contentContainerStyle={styles.listContent}
@@ -165,12 +185,12 @@ export function JournalEntryList() {
                 <Text style={styles.emptyText}>No journal entries found</Text>
               </View>
             }
+            onEndReached={() => hasNextPage && fetchNextPage()}
+            onEndReachedThreshold={0.5}
+            ListFooterComponent={renderFooter}
           />
         )}
       </View>
     </ModuleLayout>
   );
 }
-
-// Ensure the renderItem is memoized
-const useCallback = React.useCallback;

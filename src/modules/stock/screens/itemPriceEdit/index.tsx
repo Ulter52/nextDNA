@@ -1,58 +1,89 @@
-import React, { useState, useEffect, useCallback, memo } from 'react';
-import {
-  View,
-  Text,
-  ActivityIndicator,
-  ScrollView,
-  TextInput,
-  TouchableOpacity,
-  Alert,
-  KeyboardAvoidingView,
-  Platform,
-  StyleSheet
-} from 'react-native';
-import {
-  Calendar,
-  Save,
-  FileText,
-  Tag,
-  Layers,
-  Info,
-  IndianRupee,
-} from 'lucide-react-native';
-import { ModuleLayout } from '../../../../core/components/ModuleLayout';
-import { styles as detailStyles } from '../itemDetail/styles';
-import { colors, spacing, borderRadius, shadow } from '../../../../core/theme';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import { View, Text, ActivityIndicator, ScrollView, TextInput, TouchableOpacity, Alert, KeyboardAvoidingView, Platform, StyleSheet, Dimensions } from 'react-native';
+import { Calendar, Save, FileText, Tag, Layers, Info, IndianRupee, CheckCircle2 } from 'lucide-react-native';
 import { useRoute, useNavigation } from '@react-navigation/native';
-import { Selector } from '../../../../core/components/Selector';
-import { useDebounce } from '../../../../core/utils/debounce';
-import {
-  useItemPriceDetail,
-  usePriceLists,
-  useSaveItemPrice
-} from '../../hooks/itemPriceQueries';
-import { useItems } from '../../hooks/itemQueries';
+import { useForm, Controller } from 'react-hook-form';
+import { zodResolver } from '@hookform/resolvers/zod';
+import * as z from 'zod';
+import DateTimePicker from '@react-native-community/datetimepicker';
 
-// Optimized Input Component
-const FormInput = memo(({ label, value, onChangeText, placeholder, icon: Icon, keyboardType = 'default', editable = true }: any) => (
-  <View style={[detailStyles.infoRow, { flexDirection: 'column', alignItems: 'flex-start', borderBottomWidth: 1, borderBottomColor: colors.border_light, paddingVertical: spacing.md }]}>
-    <View style={{ flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 4 }}>
-      {Icon && <Icon size={12} color={colors.text_tertiary} />}
-      <Text style={[detailStyles.infoLabel, { textTransform: 'uppercase', fontSize: 10, letterSpacing: 0.5 }]}>{label}</Text>
-    </View>
-    <TextInput
-      style={{ fontSize: 14, color: colors.text_primary, fontWeight: '600', padding: 0, width: '100%' }}
-      value={String(value ?? '')}
-      onChangeText={onChangeText}
-      placeholder={placeholder}
-      keyboardType={keyboardType}
-      placeholderTextColor={colors.text_tertiary}
-      editable={editable}
-      autoCorrect={false}
-      spellCheck={false}
-    />
-  </View>
-));
+import { ModuleLayout } from '../../../../core/components/ModuleLayout';
+import { colors, spacing, borderRadius, shadow } from '../../../../core/theme';
+import { styles as detailStyles } from '../itemDetail/styles';
+import { Selector } from '../../../../core/components/Selector';
+import { FormInput } from '../../../../core/components/FormInput';
+import { SaveSection } from '../../../../core/components/SaveSection';
+
+import { useItemPriceDetail, usePriceLists, useSaveItemPrice } from '../../hooks/itemPriceQueries';
+import { useSellingItems } from '../../../selling/hooks/sellingQueries';
+
+const { width: SCREEN_WIDTH } = Dimensions.get('window');
+
+// 1. Zod Schema
+const itemPriceSchema = z.object({
+  item_code: z.string().min(1, 'Required'),
+  price_list: z.string().min(1, 'Required'),
+  price_list_rate: z.coerce.number().min(0),
+  currency: z.string().default('INR'),
+  valid_from: z.string(),
+  valid_upto: z.string().optional(),
+  packing_unit: z.coerce.number().default(1),
+});
+
+type ItemPriceFormValues = z.infer<typeof itemPriceSchema>;
+
+/**
+ * Sub-components to keep Main Screen clean
+ */
+const DateSection = ({ watch, setValue }: { watch: any, setValue: any }) => {
+  const [showPicker, setShowPicker] = useState<'valid_from' | 'valid_upto' | null>(null);
+
+  const onDateChange = (event: any, selectedDate?: Date) => {
+    const field = showPicker;
+    setShowPicker(null);
+    if (selectedDate && field) {
+      try {
+        const dateString = selectedDate.toISOString().split('T')[0];
+        setValue(field, dateString);
+      } catch (e) {
+        console.error("Date conversion error", e);
+      }
+    }
+  };
+
+  const validFrom = watch('valid_from');
+  const validUpto = watch('valid_upto');
+
+  const getPickerDate = () => {
+    const dateStr = showPicker ? watch(showPicker) : null;
+    if (!dateStr) return new Date();
+    const d = new Date(dateStr);
+    return isNaN(d.getTime()) ? new Date() : d;
+  };
+
+  return (
+    <>
+      <TouchableOpacity onPress={() => setShowPicker('valid_from')} activeOpacity={0.7}>
+        <View pointerEvents="none">
+          <FormInput label="Valid From" value={validFrom} editable={false} icon={Calendar} />
+        </View>
+      </TouchableOpacity>
+      <TouchableOpacity onPress={() => setShowPicker('valid_upto')} activeOpacity={0.7}>
+        <View pointerEvents="none">
+          <FormInput label="Valid Upto" value={validUpto} editable={false} icon={Calendar} />
+        </View>
+      </TouchableOpacity>
+      {showPicker && (
+        <DateTimePicker 
+          value={getPickerDate()} 
+          mode="date" 
+          display={Platform.OS === 'ios' ? 'spinner' : 'default'} 
+          onChange={onDateChange} 
+        />
+      )}
+    </>
+  );
+};
 
 export function ItemPriceEdit() {
   const route = useRoute<any>();
@@ -61,71 +92,80 @@ export function ItemPriceEdit() {
   const isEdit = !!priceId;
 
   const [itemSearch, setItemSearch] = useState('');
-  const debouncedItemSearch = useDebounce(itemSearch);
+  const [priceListSearch, setPriceListSearch] = useState('');
 
-  const [formData, setFormData] = useState<any>({
-    item_code: '',
-    price_list: 'Standard Selling',
-    price_list_rate: 0,
-    currency: 'INR',
-    valid_from: new Date().toISOString().split('T')[0],
-    packing_unit: 1
+  const { control, handleSubmit, watch, setValue, reset } = useForm<ItemPriceFormValues>({
+    resolver: zodResolver(itemPriceSchema),
+    defaultValues: {
+      item_code: '',
+      price_list: 'Standard Selling',
+      price_list_rate: 0,
+      currency: 'INR',
+      valid_from: new Date().toISOString().split('T')[0],
+      packing_unit: 1
+    }
   });
 
-  // Data fetching with React Query hooks
+  // Queries
   const { data: itemPrice, isLoading: loadingDetail } = useItemPriceDetail(priceId || '');
-  const { data: priceLists, isLoading: loadingPriceLists } = usePriceLists();
-  const { data: itemsRes, isLoading: loadingItems } = useItems(debouncedItemSearch);
+  
+  const { 
+    data: itemsRes, 
+    fetchNextPage: fetchNextItems, 
+    hasNextPage: hasNextItems, 
+    isFetchingNextPage: isFetchingItems 
+  } = useSellingItems(itemSearch);
+
+  const { 
+    data: priceListsRes, 
+    fetchNextPage: fetchNextPriceLists, 
+    hasNextPage: hasNextPriceLists, 
+    isFetchingNextPage: isFetchingPriceLists 
+  } = usePriceLists(priceListSearch);
+
   const saveMutation = useSaveItemPrice();
 
-  const items = itemsRes?.data || [];
+  const flattenPages = (res: any) => {
+    if (!res?.pages || !Array.isArray(res.pages)) return [];
+    let all: any[] = [];
+    for (let i = 0; i < res.pages.length; i++) {
+      if (Array.isArray(res.pages[i])) {
+        all = all.concat(res.pages[i]);
+      }
+    }
+    return all;
+  };
+
+  const items = useMemo(() => flattenPages(itemsRes), [itemsRes]);
+  const priceLists = useMemo(() => flattenPages(priceListsRes), [priceListsRes]);
 
   useEffect(() => {
     if (isEdit && itemPrice) {
-      setFormData(itemPrice);
+      reset(itemPrice);
     }
-  }, [isEdit, itemPrice]);
+  }, [isEdit, itemPrice, reset]);
 
-  const handleChange = useCallback((name: string, value: any) => {
-    setFormData((prev: any) => ({ ...prev, [name]: value }));
-  }, []);
-
-  const handleSubmit = async () => {
-    if (!formData.item_code || !formData.price_list) {
-      Alert.alert("Error", "Item and Price List are required");
-      return;
-    }
-
+  const onSubmit = async (data: ItemPriceFormValues) => {
     try {
-      await saveMutation.mutateAsync({ 
-        data: formData, 
-        id: priceId 
-      });
+      await saveMutation.mutateAsync({ data, id: priceId });
       Alert.alert("Success", `Item Price ${isEdit ? 'updated' : 'created'} successfully`);
       navigation.goBack();
     } catch (err: any) {
-      const msg = err.response?.data?.message || "Action failed";
-      Alert.alert("Error", typeof msg === 'string' ? msg : "Action failed");
+      Alert.alert("Error", err.message || "Failed to save item price");
     }
   };
 
   if (isEdit && loadingDetail) {
     return (
-      <ModuleLayout title="Edit Price" showBack>
-        <View style={detailStyles.loadingContainer}>
-          <ActivityIndicator size="large" color={colors.primary} />
-        </View>
+      <ModuleLayout title="Loading..." showBack>
+        <View style={detailStyles.loadingContainer}><ActivityIndicator size="large" color={colors.primary} /></View>
       </ModuleLayout>
     );
   }
 
   return (
     <ModuleLayout title={isEdit ? "Edit Item Price" : "New Item Price"} showBack>
-      <KeyboardAvoidingView 
-        behavior={Platform.OS === 'ios' ? 'padding' : 'height'} 
-        style={{ flex: 1 }}
-        keyboardVerticalOffset={Platform.OS === 'ios' ? 0 : 20}
-      >
+      <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : undefined} style={{ flex: 1 }}>
         <ScrollView contentContainerStyle={{ padding: spacing.lg }} keyboardShouldPersistTaps="handled">
           <View style={[detailStyles.sectionCard, detailStyles.blueCard, { width: '100%', marginBottom: spacing.xl }]}>
             <View style={detailStyles.cardTitleRow}>
@@ -133,95 +173,88 @@ export function ItemPriceEdit() {
               <Text style={[detailStyles.cardTitle, { color: colors.blue_500 }]}>Pricing Info</Text>
             </View>
 
-            {/* Price Hero Input */}
             <View style={styles.priceHeroContainer}>
               <Text style={styles.priceHeroLabel}>Price List Rate</Text>
               <View style={styles.priceHeroInputRow}>
                 <IndianRupee size={24} color={colors.primary} style={{ marginRight: 4 }} />
-                <TextInput
-                  style={styles.priceHeroInput}
-                  value={String(formData.price_list_rate || '')}
-                  onChangeText={(val) => handleChange('price_list_rate', val)}
-                  keyboardType="numeric"
-                  placeholder="0.00"
-                  placeholderTextColor={colors.text_tertiary}
+                <Controller 
+                  control={control} 
+                  name="price_list_rate" 
+                  render={({ field: { onChange, value } }) => (
+                    <TextInput
+                      style={styles.priceHeroInput}
+                      value={String(value || '')}
+                      onChangeText={onChange}
+                      keyboardType="numeric"
+                      placeholder="0.00"
+                      placeholderTextColor={colors.text_tertiary}
+                    />
+                  )} 
                 />
               </View>
             </View>
 
-            <Selector
-              label="Item"
-              options={items}
-              value={formData.item_code}
-              onChange={(val) => handleChange('item_code', val)}
-              onSearch={setItemSearch}
-              loading={loadingItems}
-              icon={Tag}
-              placeholder="Select Item"
-              displayField="item_name"
-              valueField="name"
+            <Controller 
+              control={control} 
+              name="item_code" 
+              render={({ field: { onChange, value } }) => (
+                <Selector
+                  label="Item"
+                  options={items}
+                  value={value}
+                  onChange={onChange}
+                  onSearch={setItemSearch}
+                  onEndReached={() => hasNextItems && fetchNextItems()}
+                  loadingNextPage={isFetchingItems}
+                  icon={Tag}
+                  placeholder="Select Item"
+                  displayField="item_name"
+                />
+              )} 
             />
 
-            <Selector
-              label="Price List"
-              options={priceLists || []}
-              value={formData.price_list}
-              onChange={(val) => handleChange('price_list', val)}
-              loading={loadingPriceLists}
-              icon={FileText}
-              placeholder="Select Price List"
-              displayField="name"
-              valueField="name"
+            <Controller 
+              control={control} 
+              name="price_list" 
+              render={({ field: { onChange, value } }) => (
+                <Selector
+                  label="Price List"
+                  options={priceLists}
+                  value={value}
+                  onChange={onChange}
+                  onSearch={setPriceListSearch}
+                  onEndReached={() => hasNextPriceLists && fetchNextPriceLists()}
+                  loadingNextPage={isFetchingPriceLists}
+                  icon={FileText}
+                  placeholder="Select Price List"
+                />
+              )} 
             />
 
-            <FormInput 
-              label="Currency" 
-              value={formData.currency} 
-              onChangeText={(val: string) => handleChange('currency', val)} 
-              icon={Info} 
-              placeholder="INR" 
+            <Controller 
+              control={control} 
+              name="currency" 
+              render={({ field: { onChange, value } }) => (
+                <FormInput label="Currency" value={value} onChangeText={onChange} icon={Info} placeholder="INR" />
+              )} 
             />
             
-            <FormInput 
-              label="Packing Unit" 
-              value={formData.packing_unit} 
-              onChangeText={(val: string) => handleChange('packing_unit', val)} 
-              icon={Layers} 
-              placeholder="1.0" 
-              keyboardType="numeric" 
+            <Controller 
+              control={control} 
+              name="packing_unit" 
+              render={({ field: { onChange, value } }) => (
+                <FormInput label="Packing Unit" value={String(value)} onChangeText={onChange} icon={Layers} placeholder="1.0" keyboardType="numeric" />
+              )} 
             />
             
-            <FormInput 
-              label="Valid From" 
-              value={formData.valid_from} 
-              onChangeText={(val: string) => handleChange('valid_from', val)} 
-              icon={Calendar} 
-              placeholder="YYYY-MM-DD" 
-            />
-            
-            <FormInput 
-              label="Valid Upto" 
-              value={formData.valid_upto} 
-              onChangeText={(val: string) => handleChange('valid_upto', val)} 
-              icon={Calendar} 
-              placeholder="YYYY-MM-DD" 
-            />
+            <DateSection watch={watch} setValue={setValue} />
 
-            <TouchableOpacity
-              style={styles.saveBtn}
-              onPress={handleSubmit}
-              disabled={saveMutation.isPending}
-              activeOpacity={0.8}
-            >
-              {saveMutation.isPending ? (
-                <ActivityIndicator color={colors.white} />
-              ) : (
-                <>
-                  <Save size={20} color={colors.white} />
-                  <Text style={styles.saveBtnText}>{isEdit ? 'Update Price' : 'Create Price'}</Text>
-                </>
-              )}
-            </TouchableOpacity>
+            <SaveSection 
+              isEdit={isEdit} 
+              isPending={saveMutation.isPending} 
+              handleSubmit={handleSubmit(onSubmit)} 
+              title={isEdit ? "Update Price?" : "Save Price?"} 
+            />
           </View>
         </ScrollView>
       </KeyboardAvoidingView>
@@ -257,21 +290,6 @@ const styles = StyleSheet.create({
     color: colors.text_primary,
     padding: 0,
     textAlign: 'center',
-  },
-  saveBtn: { 
-    flexDirection: 'row', 
-    alignItems: 'center', 
-    justifyContent: 'center', 
-    gap: 8, 
-    backgroundColor: colors.primary, 
-    marginTop: spacing.xl, 
-    paddingVertical: 18, 
-    borderRadius: borderRadius.xl, 
-    ...shadow.medium 
-  },
-  saveBtnText: { 
-    color: colors.white, 
-    fontSize: 16, 
-    fontWeight: 'bold' 
+    minWidth: 100
   }
 });

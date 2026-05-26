@@ -1,4 +1,4 @@
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
+import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { projectService } from '../services/projectService';
 
 export const projectKeys = {
@@ -6,13 +6,26 @@ export const projectKeys = {
   list: (params: any) => [...projectKeys.all, 'list', params] as const,
   detail: (id: string) => [...projectKeys.all, 'detail', id] as const,
   tasks: (id: string) => [...projectKeys.all, 'tasks', id] as const,
-  types: () => [...projectKeys.all, 'types'] as const,
+  metadata: (type: string, search?: string) => [...projectKeys.all, 'metadata', type, { search }] as const,
 };
 
 export const useProjects = (params: { search?: string; status?: string }) => {
-  return useQuery({
+  return useInfiniteQuery({
     queryKey: projectKeys.list(params),
-    queryFn: () => projectService.getProjects(params.search, params.status),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const data = await projectService.getProjects(params.search, params.status, pageParam as number);
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 20) return undefined;
+      return (allPages?.length || 0) * 20;
+    },
+    initialPageParam: 0,
     staleTime: 2 * 60 * 1000,
   });
 };
@@ -35,11 +48,24 @@ export const useProjectTasks = (id: string) => {
   });
 };
 
-export const useProjectTypes = () => {
-  return useQuery({
-    queryKey: projectKeys.types(),
-    queryFn: () => projectService.getProjectTypes(),
-    staleTime: 24 * 60 * 60 * 1000, // 24 hours
+export const useProjectTypes = (search?: string) => {
+  return useInfiniteQuery({
+    queryKey: projectKeys.metadata('types', search),
+    queryFn: async ({ pageParam = 0 }) => {
+      try {
+        const data = await projectService.getProjectTypes(search);
+        return Array.isArray(data) ? data : [];
+      } catch (e) {
+        return [];
+      }
+    },
+    getNextPageParam: (lastPage, allPages) => {
+      const currentLastPage = Array.isArray(lastPage) ? lastPage : [];
+      if (currentLastPage.length < 100) return undefined;
+      return (allPages?.length || 0) * 100;
+    },
+    initialPageParam: 0,
+    staleTime: 24 * 60 * 60 * 1000,
   });
 };
 

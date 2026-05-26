@@ -39,7 +39,7 @@ export const accountingApi = {
     });
   },
 
-  getPaymentEntries: (company: string, search = '', status = '', paymentType = '', partyType = '', limit = 50) => {
+  getPaymentEntries: (company: string, search = '', status = '', paymentType = '', partyType = '', start = 0, limit = 20) => {
     const filters: any[] = [["company", "=", company]];
     if (search) filters.push(["party", "like", `%${search}%`]);
     
@@ -55,6 +55,7 @@ export const accountingApi = {
       fields: '["name", "posting_date", "payment_type", "party_type", "party", "paid_amount", "status", "mode_of_payment", "docstatus"]',
       filters: JSON.stringify(filters),
       order_by: 'posting_date desc',
+      limit_start: start,
       limit_page_length: limit
     });
   },
@@ -68,7 +69,7 @@ export const accountingApi = {
 
   submitPaymentEntry: (name: string) => updateResource('Payment Entry', name, { docstatus: 1 }),
 
-  getJournalEntries: (company: string, search = '', status = '', voucherType = '', limit = 50) => {
+  getJournalEntries: (company: string, search = '', status = '', voucherType = '', start = 0, limit = 20) => {
     const filters: any[] = [["company", "=", company]];
     if (search) filters.push(["name", "like", `%${search}%`]);
 
@@ -83,6 +84,7 @@ export const accountingApi = {
       fields: '["name", "posting_date", "voucher_type", "total_debit", "total_credit", "docstatus"]',
       filters: JSON.stringify(filters),
       order_by: 'posting_date desc',
+      limit_start: start,
       limit_page_length: limit
     });
   },
@@ -100,26 +102,29 @@ export const accountingApi = {
     return updateResource('Journal Entry', name, { docstatus: 1 });
   },
 
-  getAccounts: (company: string, search = '') => {
+  getAccounts: (company: string, search = '', start = 0, limit = 50) => {
     const filters: any[] = [["company", "=", company], ["is_group", "=", 0]];
     if (search) filters.push(["account_name", "like", `%${search}%`]);
     
     return fetchResource('Account', { 
       fields: '["name", "account_name"]', 
       filters: JSON.stringify(filters),
-      limit_page_length: 50 
+      limit_start: start,
+      limit_page_length: limit 
     });
   },
 
-  getParties: (partyType: string, search = '') => fetchResource(partyType, { 
+  getParties: (partyType: string, search = '', start = 0, limit = 50) => fetchResource(partyType, { 
     fields: '["name"]', 
-    limit_page_length: 50,
+    limit_start: start,
+    limit_page_length: limit,
     filters: search ? JSON.stringify([["name", "like", `%${search}%`]]) : undefined
   }),
 
-  getModesOfPayment: (search = '') => fetchResource('Mode of Payment', { 
+  getModesOfPayment: (search = '', start = 0, limit = 50) => fetchResource('Mode of Payment', { 
     fields: '["name"]', 
-    limit_page_length: 50,
+    limit_start: start,
+    limit_page_length: limit,
     filters: search ? JSON.stringify([["name", "like", `%${search}%`]]) : undefined
   }),
 

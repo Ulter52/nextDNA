@@ -18,7 +18,7 @@ export const stockApi = {
 
   getItemDetails: (itemCode: string) => fetchResource(`Item/${itemCode}`),
 
-  getItems: (limit = 20, search?: string, filters?: any) => {
+  getItems: (limit = 20, search?: string, filters?: any, offset = 0) => {
     const finalFilters: any[] = [["disabled", "=", 0]];
     if (search) finalFilters.push(["item_name", "like", `%${search}%`]);
     if (filters?.item_group) finalFilters.push(["item_group", "=", filters.item_group]);
@@ -27,6 +27,7 @@ export const stockApi = {
     return fetchResource('Item', {
       fields: '["name", "item_name", "item_group", "stock_uom", "valuation_rate", "image", "modified"]',
       filters: JSON.stringify(finalFilters),
+      limit_start: offset,
       limit_page_length: limit,
       order_by: 'modified desc'
     });
@@ -46,7 +47,7 @@ export const stockApi = {
   updateResource: (doctype: string, name: string, data: any) => updateResource(doctype, name, data),
 
   // --- Material Request Methods ---
-  getMaterialRequests: (company: string, search?: string, status?: string, type?: string, limit = 20) => {
+  getMaterialRequests: (company: string, search?: string, status?: string, type?: string, offset = 0, limit = 20) => {
     const filters: any[] = [["company", "=", company]];
     if (search) filters.push(["name", "like", `%${search}%`]);
     if (status && status !== 'All') filters.push(["status", "=", status]);
@@ -55,6 +56,7 @@ export const stockApi = {
     return fetchResource('Material Request', {
       fields: '["name", "transaction_date", "status", "material_request_type", "per_ordered", "per_received"]',
       filters: JSON.stringify(filters),
+      limit_start: offset,
       limit_page_length: limit,
       order_by: 'transaction_date desc'
     }).then(r => r?.data || []);

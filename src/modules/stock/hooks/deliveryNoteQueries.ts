@@ -1,24 +1,24 @@
 import { useQuery, useMutation, useQueryClient, useInfiniteQuery } from '@tanstack/react-query';
 import { fetchResource, createResource, updateResource } from '@core/api/frappeApiHelpers';
-import { companyService } from '@core/services/companyService';
 
 const keys = {
   all: ['deliveryNotes'] as const,
-  list: (params: any) => [...keys.all, 'list', params] as const,
+  list: (company: string, params: any) => [...keys.all, 'list', company, params] as const,
   detail: (id: string) => [...keys.all, 'detail', id] as const,
   metadata: (type: string, search?: string) => [...keys.all, 'metadata', type, { search }] as const,
 };
 
 export const useDeliveryNotes = (params: {
+  company: string;
   search: string;
   status: string;
 }) => {
   return useInfiniteQuery({
-    queryKey: keys.list(params),
+    queryKey: keys.list(params.company, { search: params.search, status: params.status }),
     queryFn: async ({ pageParam = 0 }) => {
+      if (!params.company) return [];
       try {
-        const company = await companyService.getSelectedCompany();
-        const filters: any[] = [["company", "=", company?.name || '']];
+        const filters: any[] = [["company", "=", params.company]];
         if (params.search) filters.push(["name", "like", `%${params.search}%`]);
         if (params.status && params.status !== 'All') filters.push(["status", "=", params.status]);
 
@@ -40,6 +40,7 @@ export const useDeliveryNotes = (params: {
       return (allPages?.length || 0) * 20;
     },
     initialPageParam: 0,
+    enabled: !!params.company,
     staleTime: 2 * 60 * 1000,
   });
 };
